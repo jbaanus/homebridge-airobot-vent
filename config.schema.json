@@ -19,6 +19,12 @@
         "format": "ipv4",
         "placeholder": "192.168.1.50",
         "description": "IP address of the Airobot ventilation unit. Modbus TCP must be enabled on the unit."
+      },
+      "modbusTrace": {
+        "title": "Enable Modbus Trace Logging",
+        "type": "boolean",
+        "default": false,
+        "description": "Logs Modbus connection details and raw request/response hex frames to Homebridge logs."
       }
     }
   }

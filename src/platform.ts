@@ -37,7 +37,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
         port: MODBUS_TCP_PORT,
         unitId: MODBUS_UNIT_ID,
         timeoutMs: MODBUS_TIMEOUT_MS,
-        debugLog: message => this.log.debug(`[Modbus] ${message}`),
+        debugLog: this.airobotConfig.modbusTrace ? message => this.log.info(`[Modbus] ${message}`) : undefined,
       });
     }
 
@@ -127,6 +127,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     return {
       name: typeof config.name === 'string' && config.name.trim() ? config.name.trim() : DEFAULT_NAME,
       ipAddress,
+      modbusTrace: config.modbusTrace === true,
     };
   }
 }
