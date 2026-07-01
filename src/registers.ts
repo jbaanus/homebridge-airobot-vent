@@ -152,7 +152,7 @@ function decodeErrors(raw: number): AirobotErrors {
     co2Sensor: hasBit(raw, 256),
     heater: hasBit(raw, 512),
     lowSupply: hasBit(raw, 1024),
-    filter: hasBit(raw, 2048) || raw === 1048,
+    filter: hasBit(raw, 2048),
   };
 }
 

@@ -130,6 +130,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
 
     try {
       const state: AirobotState = await this.modbusClient.readState();
+      this.logDecodedErrors(state);
       this.accessoryHandler.updateState(state);
     } catch (error) {
       this.log.warn('Failed to read Airobot Modbus state:', error instanceof Error ? error.message : String(error));
@@ -137,6 +138,21 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     } finally {
       this.isPolling = false;
     }
+  }
+
+  private logDecodedErrors(state: AirobotState) {
+    if (!state.errors) {
+      return;
+    }
+
+    const activeFlags = Object.entries(state.errors)
+      .filter(([key, value]) => key !== 'raw' && value === true)
+      .map(([key]) => key)
+      .join(', ');
+
+    this.log.info(
+      `Decoded errors raw=${state.errors.raw} active=${activeFlags || 'none'}`,
+    );
   }
 
   private parseConfig(config: PlatformConfig): AirobotPlatformConfig | undefined {
