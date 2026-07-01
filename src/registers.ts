@@ -11,10 +11,8 @@ export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
-  // 4xxx configuration/status addresses live in Holding Registers (FC03), not Input Registers (FC04).
-  { start: 4020, quantity: 1, optional: true, functionCode: 3 },
-  // 2xxx configuration/status addresses live in Holding Registers (FC03), not Input Registers (FC04).
-  { start: 2014, quantity: 1, optional: true, functionCode: 3 },
+  // Filter status register requested via FC04 on this device variant.
+  { start: 4020, quantity: 1, optional: true, functionCode: 4 },
   // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
   { start: 2017, quantity: 2, optional: true, functionCode: 3 },
 ];
@@ -60,10 +58,9 @@ export function decodeAirobotState(values: RegisterValues, options: DecodeStateO
     supplyAirflow: values.get(1051),
     extractAirflow: values.get(1052),
     filterChangeRequired: readBoolean(values, 4020),
-    filterReminderActiveFlags: values.get(2014),
     filterReminderIntervalHours: values.get(2017),
     filterReminderElapsedHours: values.get(2018),
-    filterLifeLevel: decodeFilterLife(values.get(2017), values.get(2018), values.get(2014)),
+    filterLifeLevel: decodeFilterLife(values.get(2017), values.get(2018)),
     lastUpdated: new Date(),
   };
 }
@@ -90,12 +87,7 @@ function decodeFirmware(value?: number): string | undefined {
   return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, '0')}`;
 }
 
-function decodeFilterLife(intervalHours?: number, elapsedHours?: number, activeFlags?: number): number | undefined {
-  // Active flag bit 16 means filter replacement is due.
-  if (typeof activeFlags === 'number' && hasBit(activeFlags, 16)) {
-    return 0;
-  }
-
+function decodeFilterLife(intervalHours?: number, elapsedHours?: number): number | undefined {
   if (!intervalHours || typeof elapsedHours !== 'number') {
     return undefined;
   }
@@ -182,4 +174,3 @@ function toSigned16(value: number): number {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
-
