@@ -4,10 +4,19 @@ import { READ_RANGES, decodeAirobotState, type RegisterRange, type RegisterValue
 import type { AirobotReadOptions, AirobotState } from './types.js';
 
 const MODBUS_READ_HOLDING_REGISTERS = 3;
+const MODBUS_READ_INPUT_REGISTERS = 4;
+
+interface ReadVariant {
+  functionCode: number;
+  registerAddressOffset: number;
+}
 
 export class AirobotModbusClient {
   private transactionId = 0;
-  private registerAddressOffset = 0;
+  private selectedVariant: ReadVariant = {
+    functionCode: MODBUS_READ_HOLDING_REGISTERS,
+    registerAddressOffset: 0,
+  };
 
   constructor(private readonly options: AirobotReadOptions) {
   }
@@ -16,34 +25,41 @@ export class AirobotModbusClient {
     const values: RegisterValues = new Map();
 
     for (const range of READ_RANGES) {
-      let registers: number[];
-
-      try {
-        registers = await this.readHoldingRegisters(range, this.registerAddressOffset);
-      } catch (error) {
-        if (!this.shouldRetryWithOneBasedOffset(error)) {
-          throw error;
-        }
-
-        // Some devices expose documented addresses as 1-based values.
-        registers = await this.readHoldingRegisters(range, -1);
-        this.registerAddressOffset = -1;
-      }
-
+      const registers = await this.readRegistersWithFallback(range);
       registers.forEach((value, index) => values.set(range.start + index, value));
     }
 
     return decodeAirobotState(values);
   }
 
-  private readHoldingRegisters(range: RegisterRange, registerAddressOffset = 0): Promise<number[]> {
+  private async readRegistersWithFallback(range: RegisterRange): Promise<number[]> {
+    const variants = this.buildCandidateVariants();
+    let lastError: unknown;
+
+    for (const variant of variants) {
+      try {
+        const values = await this.readRegisters(range, variant);
+        this.selectedVariant = variant;
+        return values;
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldTryNextVariant(error)) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  private readRegisters(range: RegisterRange, variant: ReadVariant): Promise<number[]> {
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({
         host: this.options.host,
         port: this.options.port,
       });
       const transactionId = this.nextTransactionId();
-      const request = this.buildReadRequest(transactionId, range, registerAddressOffset);
+      const request = this.buildReadRequest(transactionId, range, variant);
       const chunks: Buffer[] = [];
       let settled = false;
 
@@ -75,7 +91,7 @@ export class AirobotModbusClient {
         chunks.push(chunk);
         const response = Buffer.concat(chunks);
         try {
-          const parsed = this.tryParseReadResponse(response, transactionId, range.quantity);
+          const parsed = this.tryParseReadResponse(response, transactionId, range.quantity, variant.functionCode);
           if (parsed) {
             finish(undefined, parsed);
           }
@@ -86,8 +102,8 @@ export class AirobotModbusClient {
     });
   }
 
-  private buildReadRequest(transactionId: number, range: RegisterRange, registerAddressOffset = 0): Buffer {
-    const startAddress = range.start + registerAddressOffset;
+  private buildReadRequest(transactionId: number, range: RegisterRange, variant: ReadVariant): Buffer {
+    const startAddress = range.start + variant.registerAddressOffset;
     if (startAddress < 0 || startAddress > 0xffff) {
       throw new Error(`Invalid Modbus register start ${startAddress}`);
     }
@@ -97,21 +113,49 @@ export class AirobotModbusClient {
     buffer.writeUInt16BE(0, 2);
     buffer.writeUInt16BE(6, 4);
     buffer.writeUInt8(this.options.unitId, 6);
-    buffer.writeUInt8(MODBUS_READ_HOLDING_REGISTERS, 7);
+    buffer.writeUInt8(variant.functionCode, 7);
     buffer.writeUInt16BE(startAddress, 8);
     buffer.writeUInt16BE(range.quantity, 10);
     return buffer;
   }
 
-  private shouldRetryWithOneBasedOffset(error: unknown): boolean {
-    if (this.registerAddressOffset !== 0 || !(error instanceof Error)) {
+  private buildCandidateVariants(): ReadVariant[] {
+    const candidates: ReadVariant[] = [
+      this.selectedVariant,
+      { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: 0 },
+      { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: -1 },
+      { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: 1 },
+      { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: 0 },
+      { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: -1 },
+      { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: 1 },
+    ];
+
+    const seen = new Set<string>();
+    return candidates.filter(candidate => {
+      const key = `${candidate.functionCode}:${candidate.registerAddressOffset}`;
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private shouldTryNextVariant(error: unknown): boolean {
+    if (!(error instanceof Error)) {
       return false;
     }
 
-    return /Modbus exception\s+2$/i.test(error.message.trim());
+    return /Modbus exception\s+[12]\b/i.test(error.message);
   }
 
-  private tryParseReadResponse(response: Buffer, transactionId: number, expectedQuantity: number): number[] | undefined {
+  private tryParseReadResponse(
+    response: Buffer,
+    transactionId: number,
+    expectedQuantity: number,
+    expectedFunctionCode: number,
+  ): number[] | undefined {
     if (response.length < 9) {
       return undefined;
     }
@@ -132,10 +176,10 @@ export class AirobotModbusClient {
     const functionCode = response.readUInt8(7);
     if ((functionCode & 0x80) !== 0) {
       const exceptionCode = response.readUInt8(8);
-      throw new Error(`Modbus exception ${exceptionCode}`);
+      throw new Error(`Modbus exception ${exceptionCode} for function ${expectedFunctionCode}`);
     }
 
-    if (functionCode !== MODBUS_READ_HOLDING_REGISTERS) {
+    if (functionCode !== expectedFunctionCode) {
       throw new Error(`Unexpected Modbus function code ${functionCode}`);
     }
 
