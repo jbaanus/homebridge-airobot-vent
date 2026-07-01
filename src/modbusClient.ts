@@ -53,6 +53,11 @@ export class AirobotModbusClient {
       socket.once('timeout', () => finish(new Error(`Modbus request to ${this.options.host} timed out`)));
       socket.once('error', error => finish(error));
       socket.on('data', chunk => {
+        if (!Buffer.isBuffer(chunk)) {
+          finish(new Error('Unexpected string data from Modbus socket'));
+          return;
+        }
+
         chunks.push(chunk);
         const response = Buffer.concat(chunks);
         try {
