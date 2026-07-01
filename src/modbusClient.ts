@@ -7,6 +7,7 @@ const MODBUS_READ_HOLDING_REGISTERS = 3;
 
 export class AirobotModbusClient {
   private transactionId = 0;
+  private registerAddressOffset = 0;
 
   constructor(private readonly options: AirobotReadOptions) {
   }
@@ -15,21 +16,34 @@ export class AirobotModbusClient {
     const values: RegisterValues = new Map();
 
     for (const range of READ_RANGES) {
-      const registers = await this.readHoldingRegisters(range);
+      let registers: number[];
+
+      try {
+        registers = await this.readHoldingRegisters(range, this.registerAddressOffset);
+      } catch (error) {
+        if (!this.shouldRetryWithOneBasedOffset(error)) {
+          throw error;
+        }
+
+        // Some devices expose documented addresses as 1-based values.
+        registers = await this.readHoldingRegisters(range, -1);
+        this.registerAddressOffset = -1;
+      }
+
       registers.forEach((value, index) => values.set(range.start + index, value));
     }
 
     return decodeAirobotState(values);
   }
 
-  private readHoldingRegisters(range: RegisterRange): Promise<number[]> {
+  private readHoldingRegisters(range: RegisterRange, registerAddressOffset = 0): Promise<number[]> {
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({
         host: this.options.host,
         port: this.options.port,
       });
       const transactionId = this.nextTransactionId();
-      const request = this.buildReadRequest(transactionId, range);
+      const request = this.buildReadRequest(transactionId, range, registerAddressOffset);
       const chunks: Buffer[] = [];
       let settled = false;
 
@@ -72,16 +86,29 @@ export class AirobotModbusClient {
     });
   }
 
-  private buildReadRequest(transactionId: number, range: RegisterRange): Buffer {
+  private buildReadRequest(transactionId: number, range: RegisterRange, registerAddressOffset = 0): Buffer {
+    const startAddress = range.start + registerAddressOffset;
+    if (startAddress < 0 || startAddress > 0xffff) {
+      throw new Error(`Invalid Modbus register start ${startAddress}`);
+    }
+
     const buffer = Buffer.alloc(12);
     buffer.writeUInt16BE(transactionId, 0);
     buffer.writeUInt16BE(0, 2);
     buffer.writeUInt16BE(6, 4);
     buffer.writeUInt8(this.options.unitId, 6);
     buffer.writeUInt8(MODBUS_READ_HOLDING_REGISTERS, 7);
-    buffer.writeUInt16BE(range.start, 8);
+    buffer.writeUInt16BE(startAddress, 8);
     buffer.writeUInt16BE(range.quantity, 10);
     return buffer;
+  }
+
+  private shouldRetryWithOneBasedOffset(error: unknown): boolean {
+    if (this.registerAddressOffset !== 0 || !(error instanceof Error)) {
+      return false;
+    }
+
+    return /Modbus exception\s+2$/i.test(error.message.trim());
   }
 
   private tryParseReadResponse(response: Buffer, transactionId: number, expectedQuantity: number): number[] | undefined {
