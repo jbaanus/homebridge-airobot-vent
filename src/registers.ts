@@ -139,6 +139,8 @@ function readBoundedUInt32(values: RegisterValues, address: number, min: number,
 }
 
 function decodeErrors(raw: number): AirobotErrors {
+  const FILTER_SIGNATURE = 1048;
+
   return {
     raw,
     fireAlarm: hasBit(raw, 1),
@@ -152,7 +154,8 @@ function decodeErrors(raw: number): AirobotErrors {
     co2Sensor: hasBit(raw, 256),
     heater: hasBit(raw, 512),
     lowSupply: hasBit(raw, 1024),
-    filter: hasBit(raw, 2048),
+    // Support both documented filter signature and bit-based variants.
+    filter: hasBit(raw, 2048) || (raw & FILTER_SIGNATURE) === FILTER_SIGNATURE,
   };
 }
 
