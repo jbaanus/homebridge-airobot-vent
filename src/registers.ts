@@ -4,14 +4,15 @@ export interface RegisterRange {
   start: number;
   quantity: number;
   optional?: boolean;
+  functionCode?: number;
 }
 
 export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
-  // Some Airobot variants do not expose filter reminder registers.
-  { start: 2017, quantity: 2, optional: true },
+  // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
+  { start: 2017, quantity: 2, optional: true, functionCode: 3 },
 ];
 
 export type RegisterValues = Map<number, number>;

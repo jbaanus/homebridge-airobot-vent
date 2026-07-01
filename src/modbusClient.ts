@@ -93,9 +93,11 @@ export class AirobotModbusClient {
 
   private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
     return new Promise((resolve, reject) => {
+      const functionCode = this.getFunctionCodeForRange(range, profile);
+
       this.logDebug(
         `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
-        + `(unit=${profile.unitId}, function=${profile.variant.functionCode}, `
+        + `(unit=${profile.unitId}, function=${functionCode}, `
         + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
       );
 
@@ -150,7 +152,7 @@ export class AirobotModbusClient {
             transactionId,
             range.quantity,
             profile.unitId,
-            profile.variant.functionCode,
+            functionCode,
           );
           if (parsed) {
             const startAddress = range.start + profile.variant.registerAddressOffset;
@@ -161,7 +163,7 @@ export class AirobotModbusClient {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           finish(new Error(
-            `${message} (unit=${profile.unitId}, function=${profile.variant.functionCode}, `
+            `${message} (unit=${profile.unitId}, function=${functionCode}, `
             + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
           ));
         }
@@ -180,10 +182,27 @@ export class AirobotModbusClient {
     buffer.writeUInt16BE(0, 2);
     buffer.writeUInt16BE(6, 4);
     buffer.writeUInt8(profile.unitId, 6);
-    buffer.writeUInt8(profile.variant.functionCode, 7);
+    buffer.writeUInt8(this.getFunctionCodeForRange(range, profile), 7);
     buffer.writeUInt16BE(startAddress, 8);
     buffer.writeUInt16BE(range.quantity, 10);
     return buffer;
+  }
+
+  private getFunctionCodeForRange(range: RegisterRange, profile: ReadProfile): number {
+    if (typeof range.functionCode === 'number') {
+      return range.functionCode;
+    }
+
+    const startAddress = range.start + profile.variant.registerAddressOffset;
+    if (this.isHoldingRegisterAddress(startAddress)) {
+      return MODBUS_READ_HOLDING_REGISTERS;
+    }
+
+    return profile.variant.functionCode;
+  }
+
+  private isHoldingRegisterAddress(address: number): boolean {
+    return (address >= 2000 && address < 3000) || (address >= 4000 && address < 5000);
   }
 
   private buildCandidateProfiles(): ReadProfile[] {
