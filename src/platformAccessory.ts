@@ -13,7 +13,6 @@ export class AirobotPlatformAccessory {
   private readonly humidityServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
   private readonly co2Service: Service;
   private readonly airQualityService?: Service;
-  private readonly efficiencyService: Service;
 
   private state?: AirobotState;
   private communicationFailed = true;
@@ -84,7 +83,7 @@ export class AirobotPlatformAccessory {
       this.removeSensorIfPresent(this.platform.Service.AirQualitySensor, 'air-quality');
     }
 
-    this.efficiencyService = this.createPercentageService('Heat Recovery Efficiency', 'heat-recovery-efficiency', state => state.heatRecoveryEfficiency);
+    this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'heat-recovery-efficiency');
   }
 
   updateState(state: AirobotState) {
@@ -114,7 +113,6 @@ export class AirobotPlatformAccessory {
     this.co2Service.updateCharacteristic(this.platform.Characteristic.StatusFault, this.getCo2Fault());
 
     this.updateAirQuality(state);
-    this.updateNumber(this.efficiencyService, this.platform.Characteristic.CurrentRelativeHumidity, state.heatRecoveryEfficiency);
   }
 
   markCommunicationFailure() {
@@ -139,10 +137,6 @@ export class AirobotPlatformAccessory {
     service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity).onGet(() => this.getNumber(read, 0));
     service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
     return { service, read };
-  }
-
-  private createPercentageService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
-    return this.createHumidityService(name, subtype, read).service;
   }
 
   private createAirQualityService(name: string, subtype: string) {
