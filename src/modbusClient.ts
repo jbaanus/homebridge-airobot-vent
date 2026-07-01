@@ -337,5 +337,21 @@ function formatRegisterTable(values: RegisterValues): string {
   }
 
   const rows = entries.map(([address, value]) => `${address} | ${value}`);
-  return ['Address | Value', '--- | ---', ...rows].join('\n');
+  const has2xxx = entries.some(([address]) => address >= 2000 && address < 3000);
+  const has4xxx = entries.some(([address]) => address >= 4000 && address < 5000);
+  const notes: string[] = [];
+
+  if (!has2xxx) {
+    notes.push('- No values in 2xxx range');
+  }
+
+  if (!has4xxx) {
+    notes.push('- No values in 4xxx range');
+  }
+
+  if (notes.length === 0) {
+    return ['Address | Value', '--- | ---', ...rows].join('\n');
+  }
+
+  return ['Address | Value', '--- | ---', ...rows, '', 'Notes:', ...notes].join('\n');
 }
