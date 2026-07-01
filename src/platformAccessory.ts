@@ -1,148 +1,203 @@
 import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 
-import type { ExampleHomebridgePlatform } from './platform.js';
+import { fanLevelToPercentage, hasFault } from './registers.js';
+import type { AirobotVentilationPlatform } from './platform.js';
+import type { AirobotState } from './types.js';
 
-/**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
- */
-export class ExamplePlatformAccessory {
-  private service: Service;
+type NumericValue = number | undefined;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  };
+export class AirobotPlatformAccessory {
+  private readonly fanService: Service;
+  private readonly filterService: Service;
+  private readonly temperatureServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
+  private readonly humidityServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
+  private readonly co2Service: Service;
+  private readonly airQualityService: Service;
+  private readonly efficiencyService: Service;
+
+  private state?: AirobotState;
+  private communicationFailed = true;
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: AirobotVentilationPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-    // set accessory information
+    const displayName = accessory.context.device.name as string;
+
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Airobot')
+      .setCharacteristic(this.platform.Characteristic.Model, 'Ventilation Unit')
+      .setCharacteristic(this.platform.Characteristic.Name, displayName)
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.device.ipAddress);
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
+    this.fanService = this.accessory.getService(this.platform.Service.Fanv2)
+      ?? this.accessory.addService(this.platform.Service.Fanv2, displayName);
+    this.fanService.setCharacteristic(this.platform.Characteristic.Name, displayName);
+    this.fanService.getCharacteristic(this.platform.Characteristic.Active).onGet(() => this.getFanActive());
+    this.fanService.getCharacteristic(this.platform.Characteristic.RotationSpeed).onGet(() => this.getFanSpeed());
+    this.fanService.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
 
-    if (accessory.context.device.CustomService) {
-      // This is only required when using Custom Services and Characteristics not support by HomeKit
-      this.service = this.accessory.getService(this.platform.CustomServices[accessory.context.device.CustomService]) ||
-        this.accessory.addService(this.platform.CustomServices[accessory.context.device.CustomService]);
-    } else {
-      this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    this.filterService = this.accessory.getService(this.platform.Service.FilterMaintenance)
+      ?? this.accessory.addService(this.platform.Service.FilterMaintenance, 'Filter');
+    this.filterService.getCharacteristic(this.platform.Characteristic.FilterChangeIndication).onGet(() => this.getFilterChangeIndication());
+    this.filterService.getCharacteristic(this.platform.Characteristic.FilterLifeLevel).onGet(() => this.getFilterLifeLevel());
+
+    this.temperatureServices.push(
+      this.createTemperatureService('Extract Air Temperature', 'extract-temperature', state => state.temperatures.extract),
+      this.createTemperatureService('Supply Air Temperature', 'supply-temperature', state => state.temperatures.supply),
+      this.createTemperatureService('Outside Air Temperature', 'outside-temperature', state => state.temperatures.outside),
+      this.createTemperatureService('Exhaust Air Temperature', 'exhaust-temperature', state => state.temperatures.exhaust),
+      this.createTemperatureService('Extra Temperature', 'extra-temperature', state => state.temperatures.extra),
+    );
+
+    this.humidityServices.push(
+      this.createHumidityService('Extract Air Humidity', 'extract-humidity', state => state.humidity.extract),
+      this.createHumidityService('Supply Air Humidity', 'supply-humidity', state => state.humidity.supply),
+      this.createHumidityService('Outside Air Humidity', 'outside-humidity', state => state.humidity.outside),
+      this.createHumidityService('Exhaust Air Humidity', 'exhaust-humidity', state => state.humidity.exhaust),
+      this.createHumidityService('Extra Humidity', 'extra-humidity', state => state.humidity.extra),
+    );
+
+    this.co2Service = this.accessory.getService(this.platform.Service.CarbonDioxideSensor)
+      ?? this.accessory.addService(this.platform.Service.CarbonDioxideSensor, 'CO2', 'co2');
+    this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideDetected).onGet(() => this.getCo2Detected());
+    this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideLevel).onGet(() => this.getNumber(state => state.co2, 0));
+    this.co2Service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getCo2Fault());
+
+    this.airQualityService = this.createAirQualityService('Air Quality', 'air-quality');
+    this.efficiencyService = this.createPercentageService('Heat Recovery Efficiency', 'heat-recovery-efficiency', state => state.heatRecoveryEfficiency);
+  }
+
+  updateState(state: AirobotState) {
+    this.state = state;
+    this.communicationFailed = false;
+
+    this.accessory.getService(this.platform.Service.AccessoryInformation)!
+      .updateCharacteristic(this.platform.Characteristic.FirmwareRevision, state.firmwareVersion ?? 'Unknown');
+
+    this.fanService.updateCharacteristic(this.platform.Characteristic.Active, this.getFanActive());
+    this.fanService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.getFanSpeed());
+    this.fanService.updateCharacteristic(this.platform.Characteristic.StatusFault, this.getStatusFault());
+
+    this.filterService.updateCharacteristic(this.platform.Characteristic.FilterChangeIndication, this.getFilterChangeIndication());
+    this.filterService.updateCharacteristic(this.platform.Characteristic.FilterLifeLevel, this.getFilterLifeLevel());
+
+    for (const item of this.temperatureServices) {
+      this.updateNumber(item.service, this.platform.Characteristic.CurrentTemperature, item.read(state));
     }
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    for (const item of this.humidityServices) {
+      this.updateNumber(item.service, this.platform.Characteristic.CurrentRelativeHumidity, item.read(state));
+    }
 
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
+    this.co2Service.updateCharacteristic(this.platform.Characteristic.CarbonDioxideDetected, this.getCo2Detected());
+    this.updateNumber(this.co2Service, this.platform.Characteristic.CarbonDioxideLevel, state.co2);
+    this.co2Service.updateCharacteristic(this.platform.Characteristic.StatusFault, this.getCo2Fault());
 
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method below
-
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this)); // SET - bind to the `setBrightness` method below
-
-    /**
-     * Creating multiple services of the same type.
-     *
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     *
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same subtype id.)
-     */
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
-
-    /**
-     * Updating characteristics values asynchronously.
-     *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     *
-     */
-    let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+    this.updateAirQuality(state);
+    this.updateNumber(this.efficiencyService, this.platform.Characteristic.CurrentRelativeHumidity, state.heatRecoveryEfficiency);
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
-
-    this.platform.log.debug('Set Characteristic On ->', value);
+  markCommunicationFailure() {
+    this.communicationFailed = true;
+    this.fanService.updateCharacteristic(
+      this.platform.Characteristic.StatusFault,
+      this.platform.Characteristic.StatusFault.GENERAL_FAULT,
+    );
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possible. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-   * In this case, you may decide not to implement `onGet` handlers, which may speed up
-   * the responsiveness of your device in the Home app.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
-  async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-    return isOn;
+  private createTemperatureService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
+    const service = this.accessory.getService(name)
+      ?? this.accessory.addService(this.platform.Service.TemperatureSensor, name, subtype);
+    service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).onGet(() => this.getNumber(read, 0));
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
+    return { service, read };
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
+  private createHumidityService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
+    const service = this.accessory.getService(name)
+      ?? this.accessory.addService(this.platform.Service.HumiditySensor, name, subtype);
+    service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity).onGet(() => this.getNumber(read, 0));
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
+    return { service, read };
+  }
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+  private createPercentageService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
+    return this.createHumidityService(name, subtype, read).service;
+  }
+
+  private createAirQualityService(name: string, subtype: string) {
+    const service = this.accessory.getService(name)
+      ?? this.accessory.addService(this.platform.Service.AirQualitySensor, name, subtype);
+    service.getCharacteristic(this.platform.Characteristic.AirQuality).onGet(() => this.getAirQuality());
+    service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
+    return service;
+  }
+
+  private getFanActive(): CharacteristicValue {
+    if (this.communicationFailed) {
+      return this.platform.Characteristic.Active.INACTIVE;
+    }
+
+    const speed = fanLevelToPercentage(this.state?.supplyFanLevel, this.state?.extractFanLevel) ?? 0;
+    return speed > 0 ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
+  }
+
+  private getFanSpeed(): CharacteristicValue {
+    return fanLevelToPercentage(this.state?.supplyFanLevel, this.state?.extractFanLevel) ?? 0;
+  }
+
+  private getStatusFault(): CharacteristicValue {
+    return this.communicationFailed || hasFault(this.state?.errors)
+      ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
+      : this.platform.Characteristic.StatusFault.NO_FAULT;
+  }
+
+  private getCo2Fault(): CharacteristicValue {
+    return this.communicationFailed || this.state?.errors?.co2Sensor
+      ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
+      : this.platform.Characteristic.StatusFault.NO_FAULT;
+  }
+
+  private getFilterChangeIndication(): CharacteristicValue {
+    const needsChange = this.state?.errors?.filter || (typeof this.state?.filterLifeLevel === 'number' && this.state.filterLifeLevel <= 0);
+    return needsChange
+      ? this.platform.Characteristic.FilterChangeIndication.CHANGE_FILTER
+      : this.platform.Characteristic.FilterChangeIndication.FILTER_OK;
+  }
+
+  private getFilterLifeLevel(): CharacteristicValue {
+    return this.state?.filterLifeLevel ?? 100;
+  }
+
+  private getCo2Detected(): CharacteristicValue {
+    const co2 = this.state?.co2 ?? 0;
+    return co2 >= 1000
+      ? this.platform.Characteristic.CarbonDioxideDetected.CO2_LEVELS_ABNORMAL
+      : this.platform.Characteristic.CarbonDioxideDetected.CO2_LEVELS_NORMAL;
+  }
+
+  private getAirQuality(): CharacteristicValue {
+    return this.platform.Characteristic.AirQuality.UNKNOWN;
+  }
+
+  private getNumber(read: (state: AirobotState) => NumericValue, fallback: number): CharacteristicValue {
+    if (!this.state) {
+      return fallback;
+    }
+
+    return read(this.state) ?? fallback;
+  }
+
+  private updateNumber(service: Service, characteristic: Parameters<Service['updateCharacteristic']>[0], value?: number) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      service.updateCharacteristic(characteristic, value);
+    }
+  }
+
+  private updateAirQuality(state: AirobotState) {
+    this.airQualityService.updateCharacteristic(this.platform.Characteristic.AirQuality, this.getAirQuality());
+    this.updateNumber(this.airQualityService, this.platform.Characteristic.PM2_5Density, state.pm25);
   }
 }

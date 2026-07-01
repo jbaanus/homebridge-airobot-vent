@@ -1,29 +1,26 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
-import { ExamplePlatformAccessory } from './platformAccessory.js';
+import { AirobotModbusClient } from './modbusClient.js';
+import { AirobotPlatformAccessory } from './platformAccessory.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+import type { AirobotPlatformConfig, AirobotState } from './types.js';
 
-// This is only required when using Custom Services and Characteristics not support by HomeKit
-import { EveHomeKitTypes } from 'homebridge-lib/EveHomeKitTypes';
+const DEFAULT_NAME = 'Airobot Ventilation';
+const MODBUS_TCP_PORT = 502;
+const MODBUS_UNIT_ID = 1;
+const MODBUS_TIMEOUT_MS = 5000;
+const POLL_INTERVAL_MS = 30000;
 
-/**
- * HomebridgePlatform
- * This class is the main constructor for your plugin, this is where you should
- * parse the user config and discover/register accessories with Homebridge.
- */
-export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
+export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
-
-  // this is used to track restored cached accessories
   public readonly accessories: Map<string, PlatformAccessory> = new Map();
-  public readonly discoveredCacheUUIDs: string[] = [];
 
-  // This is only required when using Custom Services and Characteristics not support by HomeKit
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public readonly CustomServices: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public readonly CustomCharacteristics: any;
+  private readonly airobotConfig?: AirobotPlatformConfig;
+  private readonly modbusClient?: AirobotModbusClient;
+  private accessoryHandler?: AirobotPlatformAccessory;
+  private pollTimer?: ReturnType<typeof setInterval>;
+  private isPolling = false;
 
   constructor(
     public readonly log: Logging,
@@ -32,119 +29,103 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+    this.airobotConfig = this.parseConfig(config);
 
-    // This is only required when using Custom Services and Characteristics not support by HomeKit
-    this.CustomServices = new EveHomeKitTypes(this.api).Services;
-    this.CustomCharacteristics = new EveHomeKitTypes(this.api).Characteristics;
+    if (this.airobotConfig) {
+      this.modbusClient = new AirobotModbusClient({
+        host: this.airobotConfig.ipAddress,
+        port: MODBUS_TCP_PORT,
+        unitId: MODBUS_UNIT_ID,
+        timeoutMs: MODBUS_TIMEOUT_MS,
+      });
+    }
 
-    this.log.debug('Finished initializing platform:', this.config.name);
-
-    // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    // Dynamic Platform plugins should only register new accessories after this event was fired,
-    // in order to ensure they weren't added to homebridge already. This event can also be used
-    // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
+      this.discoverDevice();
+      this.startPolling();
     });
+
+    this.api.on('shutdown', () => this.stopPolling());
   }
 
-  /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to set up event handlers for characteristics and update respective values.
-   */
   configureAccessory(accessory: PlatformAccessory) {
     this.log.info('Loading accessory from cache:', accessory.displayName);
-
-    // add the restored accessory to the accessories cache, so we can track if it has already been registered
     this.accessories.set(accessory.UUID, accessory);
   }
 
-  /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
-   */
-  discoverDevices() {
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-      {
-        // This is an example of a device which uses a Custom Service
-        exampleUniqueId: 'IJKL',
-        exampleDisplayName: 'Backyard',
-        CustomService: 'AirPressureSensor',
-      },
-    ];
-
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
-
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.get(uuid);
-
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. e.g.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
-
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, existingAccessory);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, e.g.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      }
-
-      // push into discoveredCacheUUIDs
-      this.discoveredCacheUUIDs.push(uuid);
+  private discoverDevice() {
+    if (!this.airobotConfig) {
+      return;
     }
 
-    // you can also deal with accessories from the cache which are no longer present by removing them from Homebridge
-    // for example, if your plugin logs into a cloud account to retrieve a device list, and a user has previously removed a device
-    // from this cloud account, then this device will no longer be present in the device list but will still be in the Homebridge cache
-    for (const [uuid, accessory] of this.accessories) {
-      if (!this.discoveredCacheUUIDs.includes(uuid)) {
-        this.log.info('Removing existing accessory from cache:', accessory.displayName);
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    const uuid = this.api.hap.uuid.generate(`${PLUGIN_NAME}:${this.airobotConfig.ipAddress}`);
+    const existingAccessory = this.accessories.get(uuid);
+
+    if (existingAccessory) {
+      this.log.info('Restoring Airobot accessory from cache:', existingAccessory.displayName);
+      existingAccessory.context.device = this.airobotConfig;
+      this.api.updatePlatformAccessories([existingAccessory]);
+      this.accessoryHandler = new AirobotPlatformAccessory(this, existingAccessory);
+    } else {
+      this.log.info('Adding Airobot accessory:', this.airobotConfig.name);
+      const accessory = new this.api.platformAccessory(this.airobotConfig.name, uuid);
+      accessory.context.device = this.airobotConfig;
+      this.accessoryHandler = new AirobotPlatformAccessory(this, accessory);
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+
+    for (const [cachedUuid, cachedAccessory] of this.accessories) {
+      if (cachedUuid !== uuid) {
+        this.log.info('Removing stale Airobot accessory from cache:', cachedAccessory.displayName);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [cachedAccessory]);
       }
     }
+  }
+
+  private startPolling() {
+    if (!this.modbusClient || !this.accessoryHandler) {
+      return;
+    }
+
+    void this.poll();
+    this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+  }
+
+  private stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+  }
+
+  private async poll() {
+    if (this.isPolling || !this.modbusClient || !this.accessoryHandler) {
+      return;
+    }
+
+    this.isPolling = true;
+
+    try {
+      const state: AirobotState = await this.modbusClient.readState();
+      this.accessoryHandler.updateState(state);
+    } catch (error) {
+      this.log.warn('Failed to read Airobot Modbus state:', error instanceof Error ? error.message : String(error));
+      this.accessoryHandler.markCommunicationFailure();
+    } finally {
+      this.isPolling = false;
+    }
+  }
+
+  private parseConfig(config: PlatformConfig): AirobotPlatformConfig | undefined {
+    const ipAddress = typeof config.ipAddress === 'string' ? config.ipAddress.trim() : '';
+    if (!ipAddress) {
+      this.log.error('Missing required "ipAddress" config value for Airobot ventilation unit.');
+      return undefined;
+    }
+
+    return {
+      name: typeof config.name === 'string' && config.name.trim() ? config.name.trim() : DEFAULT_NAME,
+      ipAddress,
+    };
   }
 }
