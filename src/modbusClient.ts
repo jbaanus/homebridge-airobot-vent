@@ -22,25 +22,21 @@ export class AirobotModbusClient {
   }
 
   async readState(): Promise<AirobotState> {
-    const values: RegisterValues = new Map();
-
-    for (const range of READ_RANGES) {
-      const registers = await this.readRegistersWithFallback(range);
-      registers.forEach((value, index) => values.set(range.start + index, value));
-    }
-
-    return decodeAirobotState(values);
-  }
-
-  private async readRegistersWithFallback(range: RegisterRange): Promise<number[]> {
     const variants = this.buildCandidateVariants();
     let lastError: unknown;
 
     for (const variant of variants) {
       try {
-        const values = await this.readRegisters(range, variant);
+        const state = await this.readStateWithVariant(variant);
+        if (!this.isPlausibleState(state)) {
+          this.logDebug(
+            `Rejecting Modbus variant function=${variant.functionCode} offset=${variant.registerAddressOffset} due to implausible values`,
+          );
+          continue;
+        }
+
         this.selectedVariant = variant;
-        return values;
+        return state;
       } catch (error) {
         lastError = error;
         if (!this.shouldTryNextVariant(error)) {
@@ -49,7 +45,18 @@ export class AirobotModbusClient {
       }
     }
 
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    throw lastError instanceof Error ? lastError : new Error('Failed to read Airobot Modbus state with all variants');
+  }
+
+  private async readStateWithVariant(variant: ReadVariant): Promise<AirobotState> {
+    const values: RegisterValues = new Map();
+
+    for (const range of READ_RANGES) {
+      const registers = await this.readRegisters(range, variant);
+      registers.forEach((value, index) => values.set(range.start + index, value));
+    }
+
+    return decodeAirobotState(values);
   }
 
   private readRegisters(range: RegisterRange, variant: ReadVariant): Promise<number[]> {
@@ -139,10 +146,8 @@ export class AirobotModbusClient {
       this.selectedVariant,
       { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: 0 },
       { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: -1 },
-      { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: 1 },
       { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: 0 },
       { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: -1 },
-      { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: 1 },
     ];
 
     const seen = new Set<string>();
@@ -163,6 +168,17 @@ export class AirobotModbusClient {
     }
 
     return /Modbus exception\s+[12]\b/i.test(error.message);
+  }
+
+  private isPlausibleState(state: AirobotState): boolean {
+    const temperatureValues = Object.values(state.temperatures).filter((value): value is number => typeof value === 'number');
+    const humidityValues = Object.values(state.humidity).filter((value): value is number => typeof value === 'number');
+
+    const hasInvalidTemperature = temperatureValues.some(value => value < -50 || value > 100);
+    const hasInvalidHumidity = humidityValues.some(value => value < 0 || value > 100);
+    const hasInvalidPm25 = typeof state.pm25 === 'number' && (state.pm25 < 0 || state.pm25 > 1000);
+
+    return !hasInvalidTemperature && !hasInvalidHumidity && !hasInvalidPm25;
   }
 
   private tryParseReadResponse(

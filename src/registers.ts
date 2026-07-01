@@ -40,7 +40,7 @@ export function decodeAirobotState(values: RegisterValues): AirobotState {
     errors: decodeErrors(readUInt32(values, 1026) ?? 0),
     serverConnected: readBoolean(values, 1028),
     voc: values.get(1029),
-    pm25: readUInt32(values, 1031),
+    pm25: readBoundedUInt32(values, 1031, 0, 1000),
     heatRecoveryEfficiency: values.get(1034),
     supplyAirflow: values.get(1051),
     extractAirflow: values.get(1052),
@@ -88,16 +88,20 @@ function readBoolean(values: RegisterValues, address: number): boolean | undefin
 
 function readTenths(values: RegisterValues, address: number): number | undefined {
   const value = values.get(address);
-  return typeof value === 'number' ? value / 10 : undefined;
+  if (typeof value !== 'number' || value === 0xffff) {
+    return undefined;
+  }
+
+  return clamp(value / 10, 0, 100);
 }
 
 function readSignedTenths(values: RegisterValues, address: number): number | undefined {
   const value = values.get(address);
-  if (typeof value !== 'number') {
+  if (typeof value !== 'number' || value === 0x7fff || value === 0x8000 || value === 0xffff) {
     return undefined;
   }
 
-  return toSigned16(value) / 10;
+  return clamp(toSigned16(value) / 10, -50, 100);
 }
 
 function readUInt32(values: RegisterValues, address: number): number | undefined {
@@ -107,7 +111,20 @@ function readUInt32(values: RegisterValues, address: number): number | undefined
     return undefined;
   }
 
+  if (high === 0xffff && low === 0xffff) {
+    return undefined;
+  }
+
   return (high * 65536) + low;
+}
+
+function readBoundedUInt32(values: RegisterValues, address: number, min: number, max: number): number | undefined {
+  const value = readUInt32(values, address);
+  if (typeof value !== 'number') {
+    return undefined;
+  }
+
+  return clamp(value, min, max);
 }
 
 function decodeErrors(raw: number): AirobotErrors {
