@@ -145,13 +145,17 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
       return;
     }
 
+    const errorRegisterHigh = Math.floor(state.errors.raw / 65536);
+    const errorRegisterLow = state.errors.raw & 0xffff;
+
     const activeFlags = Object.entries(state.errors)
       .filter(([key, value]) => key !== 'raw' && value === true)
       .map(([key]) => key)
       .join(', ');
 
     this.log.info(
-      `Decoded errors raw=${state.errors.raw} active=${activeFlags || 'none'}`,
+      `Decoded errors reg1026=${errorRegisterHigh} reg1027=${errorRegisterLow} `
+      + `raw=${state.errors.raw} active=${activeFlags || 'none'}`,
     );
   }
 

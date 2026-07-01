@@ -151,7 +151,9 @@ export class AirobotModbusClient {
             profile.variant.functionCode,
           );
           if (parsed) {
+            const startAddress = range.start + profile.variant.registerAddressOffset;
             this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
+            this.logDebug(`Register values tx=${transactionId} ${formatRegisterValues(startAddress, parsed)}`);
             finish(undefined, parsed);
           }
         } catch (error) {
@@ -318,4 +320,10 @@ export class AirobotModbusClient {
 
 function toHex(buffer: Buffer): string {
   return Array.from(buffer, byte => byte.toString(16).padStart(2, '0')).join(' ');
+}
+
+function formatRegisterValues(startAddress: number, values: number[]): string {
+  return values
+    .map((value, index) => `${startAddress + index}=${value}`)
+    .join(', ');
 }
