@@ -83,6 +83,8 @@ export class AirobotModbusClient {
       }
     }
 
+    this.logDebug(`Register table:\n${formatRegisterTable(values)}`);
+
     return decodeAirobotState(values, {
       humidifier: this.options.humidifier,
       pm25Sensor: this.options.pm25Sensor,
@@ -326,4 +328,14 @@ function formatRegisterValues(startAddress: number, values: number[]): string {
   return values
     .map((value, index) => `${startAddress + index}=${value}`)
     .join(', ');
+}
+
+function formatRegisterTable(values: RegisterValues): string {
+  const entries = Array.from(values.entries()).sort((left, right) => left[0] - right[0]);
+  if (entries.length === 0) {
+    return 'Address | Value\n--- | ---\n(none)';
+  }
+
+  const rows = entries.map(([address, value]) => `${address} | ${value}`);
+  return ['Address | Value', '--- | ---', ...rows].join('\n');
 }
