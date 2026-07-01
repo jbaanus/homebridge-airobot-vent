@@ -48,9 +48,17 @@ export class AirobotPlatformAccessory {
       this.createTemperatureService('Extract Air Temperature', 'extract-temperature', state => state.temperatures.extract),
     );
 
+    this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'supply-temperature');
+    this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'outside-temperature');
+    this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'exhaust-temperature');
+
     this.humidityServices.push(
       this.createHumidityService('Extract Air Humidity', 'extract-humidity', state => state.humidity.extract),
     );
+
+    this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'supply-humidity');
+    this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'outside-humidity');
+    this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'exhaust-humidity');
 
     if (humidifierEnabled) {
       this.temperatureServices.push(
