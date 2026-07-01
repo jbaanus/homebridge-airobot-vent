@@ -12,7 +12,7 @@ export class AirobotPlatformAccessory {
   private readonly temperatureServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
   private readonly humidityServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
   private readonly co2Service: Service;
-  private readonly airQualityService: Service;
+  private readonly airQualityService?: Service;
   private readonly efficiencyService: Service;
 
   private state?: AirobotState;
@@ -78,7 +78,12 @@ export class AirobotPlatformAccessory {
     this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideLevel).onGet(() => this.getNumber(state => state.co2, 0));
     this.co2Service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getCo2Fault());
 
-    this.airQualityService = this.createAirQualityService('Air Quality', 'air-quality', pm25SensorEnabled);
+    if (pm25SensorEnabled) {
+      this.airQualityService = this.createAirQualityService('Air Quality', 'air-quality');
+    } else {
+      this.removeSensorIfPresent(this.platform.Service.AirQualitySensor, 'air-quality');
+    }
+
     this.efficiencyService = this.createPercentageService('Heat Recovery Efficiency', 'heat-recovery-efficiency', state => state.heatRecoveryEfficiency);
   }
 
@@ -140,18 +145,12 @@ export class AirobotPlatformAccessory {
     return this.createHumidityService(name, subtype, read).service;
   }
 
-  private createAirQualityService(name: string, subtype: string, pm25SensorEnabled: boolean) {
+  private createAirQualityService(name: string, subtype: string) {
     const service = this.accessory.getService(name)
       ?? this.accessory.addService(this.platform.Service.AirQualitySensor, name, subtype);
     service.getCharacteristic(this.platform.Characteristic.AirQuality).onGet(() => this.getAirQuality());
 
-    if (pm25SensorEnabled) {
-      service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
-    } else {
-      if (service.testCharacteristic(this.platform.Characteristic.PM2_5Density)) {
-        service.removeCharacteristic(service.getCharacteristic(this.platform.Characteristic.PM2_5Density));
-      }
-    }
+    service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
 
     service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
     return service;
@@ -226,6 +225,10 @@ export class AirobotPlatformAccessory {
   }
 
   private updateAirQuality(state: AirobotState) {
+    if (!this.airQualityService) {
+      return;
+    }
+
     this.airQualityService.updateCharacteristic(this.platform.Characteristic.AirQuality, this.getAirQuality());
     this.updateNumber(this.airQualityService, this.platform.Characteristic.PM2_5Density, state.pm25);
   }
