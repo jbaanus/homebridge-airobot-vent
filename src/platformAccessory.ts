@@ -50,9 +50,6 @@ export class AirobotPlatformAccessory {
 
     this.humidityServices.push(
       this.createHumidityService('Extract Air Humidity', 'extract-humidity', state => state.humidity.extract),
-      this.createHumidityService('Supply Air Humidity', 'supply-humidity', state => state.humidity.supply),
-      this.createHumidityService('Outside Air Humidity', 'outside-humidity', state => state.humidity.outside),
-      this.createHumidityService('Exhaust Air Humidity', 'exhaust-humidity', state => state.humidity.exhaust),
     );
 
     if (humidifierEnabled) {
