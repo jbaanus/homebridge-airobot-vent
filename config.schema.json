@@ -33,6 +33,18 @@
         "type": "boolean",
         "default": false,
         "description": "Logs Modbus connection details and raw request/response hex frames to Homebridge logs (info and debug levels)."
+      },
+      "humidifier": {
+        "title": "Humidifier Installed",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable only when the humidifier/extra sensor option is installed. When disabled, extra temperature/humidity (registers 1005 and 1010) are ignored."
+      },
+      "pm25Sensor": {
+        "title": "PM2.5 Sensor Installed",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable only when the optional PM2.5 sensor is installed. When disabled, PM2.5 register 1031 is ignored."
       }
     }
   }

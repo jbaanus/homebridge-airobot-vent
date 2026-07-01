@@ -16,7 +16,15 @@ export const READ_RANGES: RegisterRange[] = [
 
 export type RegisterValues = Map<number, number>;
 
-export function decodeAirobotState(values: RegisterValues): AirobotState {
+export interface DecodeStateOptions {
+  humidifier?: boolean;
+  pm25Sensor?: boolean;
+}
+
+export function decodeAirobotState(values: RegisterValues, options: DecodeStateOptions = {}): AirobotState {
+  const humidifierEnabled = options.humidifier === true;
+  const pm25SensorEnabled = options.pm25Sensor === true;
+
   return {
     firmwareVersion: decodeFirmware(values.get(1000)),
     temperatures: {
@@ -24,14 +32,14 @@ export function decodeAirobotState(values: RegisterValues): AirobotState {
       supply: readSignedTenths(values, 1002),
       outside: readSignedTenths(values, 1003),
       exhaust: readSignedTenths(values, 1004),
-      extra: readSignedTenths(values, 1005),
+      extra: humidifierEnabled ? readSignedTenths(values, 1005) : undefined,
     },
     humidity: {
       extract: readTenths(values, 1006),
       supply: readTenths(values, 1007),
       outside: readTenths(values, 1008),
       exhaust: readTenths(values, 1009),
-      extra: readTenths(values, 1010),
+      extra: humidifierEnabled ? readTenths(values, 1010) : undefined,
     },
     co2: values.get(1011),
     supplyFanLevel: values.get(1014),
@@ -42,7 +50,7 @@ export function decodeAirobotState(values: RegisterValues): AirobotState {
     errors: decodeErrors(readUInt32(values, 1026) ?? 0),
     serverConnected: readBoolean(values, 1028),
     voc: values.get(1029),
-    pm25: readBoundedUInt32(values, 1031, 0, 1000),
+    pm25: pm25SensorEnabled ? readBoundedUInt32(values, 1031, 0, 1000) : undefined,
     heatRecoveryEfficiency: values.get(1034),
     supplyAirflow: values.get(1051),
     extractAirflow: values.get(1052),

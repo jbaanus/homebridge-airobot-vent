@@ -3,6 +3,8 @@ export interface AirobotPlatformConfig {
   ipAddress: string;
   modbusUnitId: number;
   modbusTrace: boolean;
+  humidifier: boolean;
+  pm25Sensor: boolean;
 }
 
 export interface AirobotState {
@@ -61,5 +63,7 @@ export interface AirobotReadOptions {
   port: number;
   unitId: number;
   timeoutMs: number;
+  humidifier: boolean;
+  pm25Sensor: boolean;
   debugLog?: (message: string) => void;
 }

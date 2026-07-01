@@ -83,7 +83,10 @@ export class AirobotModbusClient {
       }
     }
 
-    return decodeAirobotState(values);
+    return decodeAirobotState(values, {
+      humidifier: this.options.humidifier,
+      pm25Sensor: this.options.pm25Sensor,
+    });
   }
 
   private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {

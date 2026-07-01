@@ -23,6 +23,8 @@ export class AirobotPlatformAccessory {
     private readonly accessory: PlatformAccessory,
   ) {
     const displayName = accessory.context.device.name as string;
+    const humidifierEnabled = accessory.context.device.humidifier === true;
+    const pm25SensorEnabled = accessory.context.device.pm25Sensor === true;
 
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Airobot')
@@ -47,7 +49,6 @@ export class AirobotPlatformAccessory {
       this.createTemperatureService('Supply Air Temperature', 'supply-temperature', state => state.temperatures.supply),
       this.createTemperatureService('Outside Air Temperature', 'outside-temperature', state => state.temperatures.outside),
       this.createTemperatureService('Exhaust Air Temperature', 'exhaust-temperature', state => state.temperatures.exhaust),
-      this.createTemperatureService('Extra Temperature', 'extra-temperature', state => state.temperatures.extra),
     );
 
     this.humidityServices.push(
@@ -55,8 +56,19 @@ export class AirobotPlatformAccessory {
       this.createHumidityService('Supply Air Humidity', 'supply-humidity', state => state.humidity.supply),
       this.createHumidityService('Outside Air Humidity', 'outside-humidity', state => state.humidity.outside),
       this.createHumidityService('Exhaust Air Humidity', 'exhaust-humidity', state => state.humidity.exhaust),
-      this.createHumidityService('Extra Humidity', 'extra-humidity', state => state.humidity.extra),
     );
+
+    if (humidifierEnabled) {
+      this.temperatureServices.push(
+        this.createTemperatureService('Extra Temperature', 'extra-temperature', state => state.temperatures.extra),
+      );
+      this.humidityServices.push(
+        this.createHumidityService('Extra Humidity', 'extra-humidity', state => state.humidity.extra),
+      );
+    } else {
+      this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'extra-temperature');
+      this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'extra-humidity');
+    }
 
     this.co2Service = this.accessory.getService(this.platform.Service.CarbonDioxideSensor)
       ?? this.accessory.addService(this.platform.Service.CarbonDioxideSensor, 'CO2', 'co2');
@@ -64,7 +76,7 @@ export class AirobotPlatformAccessory {
     this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideLevel).onGet(() => this.getNumber(state => state.co2, 0));
     this.co2Service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getCo2Fault());
 
-    this.airQualityService = this.createAirQualityService('Air Quality', 'air-quality');
+    this.airQualityService = this.createAirQualityService('Air Quality', 'air-quality', pm25SensorEnabled);
     this.efficiencyService = this.createPercentageService('Heat Recovery Efficiency', 'heat-recovery-efficiency', state => state.heatRecoveryEfficiency);
   }
 
@@ -126,13 +138,28 @@ export class AirobotPlatformAccessory {
     return this.createHumidityService(name, subtype, read).service;
   }
 
-  private createAirQualityService(name: string, subtype: string) {
+  private createAirQualityService(name: string, subtype: string, pm25SensorEnabled: boolean) {
     const service = this.accessory.getService(name)
       ?? this.accessory.addService(this.platform.Service.AirQualitySensor, name, subtype);
     service.getCharacteristic(this.platform.Characteristic.AirQuality).onGet(() => this.getAirQuality());
-    service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
+
+    if (pm25SensorEnabled) {
+      service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
+    } else {
+      if (service.testCharacteristic(this.platform.Characteristic.PM2_5Density)) {
+        service.removeCharacteristic(service.getCharacteristic(this.platform.Characteristic.PM2_5Density));
+      }
+    }
+
     service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
     return service;
+  }
+
+  private removeSensorIfPresent(service: Parameters<PlatformAccessory['getServiceById']>[0], subtype: string) {
+    const existingService = this.accessory.getServiceById(service, subtype);
+    if (existingService) {
+      this.accessory.removeService(existingService);
+    }
   }
 
   private getFanActive(): CharacteristicValue {

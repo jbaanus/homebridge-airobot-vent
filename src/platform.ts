@@ -34,7 +34,9 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     if (this.airobotConfig) {
       this.log.info(
         `Configured Airobot target ip=${this.airobotConfig.ipAddress} unit=${this.airobotConfig.modbusUnitId} `
-        + `modbusTrace=${this.airobotConfig.modbusTrace ? 'on' : 'off'}`,
+        + `modbusTrace=${this.airobotConfig.modbusTrace ? 'on' : 'off'} `
+        + `humidifier=${this.airobotConfig.humidifier ? 'on' : 'off'} `
+        + `pm25Sensor=${this.airobotConfig.pm25Sensor ? 'on' : 'off'}`,
       );
 
       if (this.airobotConfig.modbusTrace) {
@@ -46,6 +48,8 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
         port: MODBUS_TCP_PORT,
         unitId: this.airobotConfig.modbusUnitId,
         timeoutMs: MODBUS_TIMEOUT_MS,
+        humidifier: this.airobotConfig.humidifier,
+        pm25Sensor: this.airobotConfig.pm25Sensor,
         debugLog: this.airobotConfig.modbusTrace
           ? message => {
             this.log.info(`[Modbus] ${message}`);
@@ -151,6 +155,8 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
         ? config.modbusUnitId
         : MODBUS_UNIT_ID,
       modbusTrace: config.modbusTrace === true,
+      humidifier: config.humidifier === true,
+      pm25Sensor: config.pm25Sensor === true,
     };
   }
 }
