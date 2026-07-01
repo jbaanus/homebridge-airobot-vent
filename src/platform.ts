@@ -35,7 +35,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
       this.modbusClient = new AirobotModbusClient({
         host: this.airobotConfig.ipAddress,
         port: MODBUS_TCP_PORT,
-        unitId: MODBUS_UNIT_ID,
+        unitId: this.airobotConfig.modbusUnitId,
         timeoutMs: MODBUS_TIMEOUT_MS,
         debugLog: this.airobotConfig.modbusTrace ? message => this.log.info(`[Modbus] ${message}`) : undefined,
       });
@@ -127,6 +127,11 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     return {
       name: typeof config.name === 'string' && config.name.trim() ? config.name.trim() : DEFAULT_NAME,
       ipAddress,
+      modbusUnitId: Number.isInteger(config.modbusUnitId)
+        && config.modbusUnitId >= 0
+        && config.modbusUnitId <= 255
+        ? config.modbusUnitId
+        : MODBUS_UNIT_ID,
       modbusTrace: config.modbusTrace === true,
     };
   }

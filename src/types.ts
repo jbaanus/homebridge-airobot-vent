@@ -1,6 +1,7 @@
 export interface AirobotPlatformConfig {
   name: string;
   ipAddress: string;
+  modbusUnitId: number;
   modbusTrace: boolean;
 }
 

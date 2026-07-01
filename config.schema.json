@@ -20,6 +20,14 @@
         "placeholder": "192.168.1.50",
         "description": "IP address of the Airobot ventilation unit. Modbus TCP must be enabled on the unit."
       },
+      "modbusUnitId": {
+        "title": "Modbus Unit ID",
+        "type": "integer",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 255,
+        "description": "Modbus slave/unit id used for requests. Defaults to 1."
+      },
       "modbusTrace": {
         "title": "Enable Modbus Trace Logging",
         "type": "boolean",

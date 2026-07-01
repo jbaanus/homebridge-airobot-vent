@@ -11,35 +11,49 @@ interface ReadVariant {
   registerAddressOffset: number;
 }
 
+interface ReadProfile {
+  unitId: number;
+  variant: ReadVariant;
+}
+
 export class AirobotModbusClient {
   private transactionId = 0;
-  private selectedVariant: ReadVariant = {
-    functionCode: MODBUS_READ_HOLDING_REGISTERS,
-    registerAddressOffset: 0,
-  };
+  private selectedProfile: ReadProfile;
 
   constructor(private readonly options: AirobotReadOptions) {
+    this.selectedProfile = {
+      unitId: this.options.unitId,
+      variant: {
+        functionCode: MODBUS_READ_HOLDING_REGISTERS,
+        registerAddressOffset: 0,
+      },
+    };
   }
 
   async readState(): Promise<AirobotState> {
-    const variants = this.buildCandidateVariants();
+    const profiles = this.buildCandidateProfiles();
     let lastError: unknown;
 
-    for (const variant of variants) {
+    for (const profile of profiles) {
       try {
-        const state = await this.readStateWithVariant(variant);
+        const state = await this.readStateWithProfile(profile);
         if (!this.isPlausibleState(state)) {
           this.logDebug(
-            `Rejecting Modbus variant function=${variant.functionCode} offset=${variant.registerAddressOffset} due to implausible values`,
+            `Rejecting Modbus profile unit=${profile.unitId} `
+            + `function=${profile.variant.functionCode} offset=${profile.variant.registerAddressOffset} `
+            + 'due to implausible values',
           );
           continue;
         }
 
-        this.selectedVariant = variant;
+        this.selectedProfile = profile;
+        this.logDebug(
+          `Selected Modbus profile unit=${profile.unitId} function=${profile.variant.functionCode} offset=${profile.variant.registerAddressOffset}`,
+        );
         return state;
       } catch (error) {
         lastError = error;
-        if (!this.shouldTryNextVariant(error)) {
+        if (!this.shouldTryNextProfile(error)) {
           throw error;
         }
       }
@@ -48,22 +62,23 @@ export class AirobotModbusClient {
     throw lastError instanceof Error ? lastError : new Error('Failed to read Airobot Modbus state with all variants');
   }
 
-  private async readStateWithVariant(variant: ReadVariant): Promise<AirobotState> {
+  private async readStateWithProfile(profile: ReadProfile): Promise<AirobotState> {
     const values: RegisterValues = new Map();
 
     for (const range of READ_RANGES) {
-      const registers = await this.readRegisters(range, variant);
+      const registers = await this.readRegisters(range, profile);
       registers.forEach((value, index) => values.set(range.start + index, value));
     }
 
     return decodeAirobotState(values);
   }
 
-  private readRegisters(range: RegisterRange, variant: ReadVariant): Promise<number[]> {
+  private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
     return new Promise((resolve, reject) => {
       this.logDebug(
         `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
-        + `(unit=${this.options.unitId}, function=${variant.functionCode}, start=${range.start + variant.registerAddressOffset}, quantity=${range.quantity})`,
+        + `(unit=${profile.unitId}, function=${profile.variant.functionCode}, `
+        + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
       );
 
       const socket = net.createConnection({
@@ -71,7 +86,7 @@ export class AirobotModbusClient {
         port: this.options.port,
       });
       const transactionId = this.nextTransactionId();
-      const request = this.buildReadRequest(transactionId, range, variant);
+      const request = this.buildReadRequest(transactionId, range, profile);
       this.logDebug(
         `Sending Modbus request tx=${transactionId} bytes=${request.length} hex=${toHex(request)}`,
       );
@@ -112,7 +127,13 @@ export class AirobotModbusClient {
           `Received Modbus response tx=${transactionId} chunkBytes=${chunk.length} totalBytes=${response.length} hex=${toHex(response)}`,
         );
         try {
-          const parsed = this.tryParseReadResponse(response, transactionId, range.quantity, variant.functionCode);
+          const parsed = this.tryParseReadResponse(
+            response,
+            transactionId,
+            range.quantity,
+            profile.unitId,
+            profile.variant.functionCode,
+          );
           if (parsed) {
             this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
             finish(undefined, parsed);
@@ -124,8 +145,8 @@ export class AirobotModbusClient {
     });
   }
 
-  private buildReadRequest(transactionId: number, range: RegisterRange, variant: ReadVariant): Buffer {
-    const startAddress = range.start + variant.registerAddressOffset;
+  private buildReadRequest(transactionId: number, range: RegisterRange, profile: ReadProfile): Buffer {
+    const startAddress = range.start + profile.variant.registerAddressOffset;
     if (startAddress < 0 || startAddress > 0xffff) {
       throw new Error(`Invalid Modbus register start ${startAddress}`);
     }
@@ -134,25 +155,31 @@ export class AirobotModbusClient {
     buffer.writeUInt16BE(transactionId, 0);
     buffer.writeUInt16BE(0, 2);
     buffer.writeUInt16BE(6, 4);
-    buffer.writeUInt8(this.options.unitId, 6);
-    buffer.writeUInt8(variant.functionCode, 7);
+    buffer.writeUInt8(profile.unitId, 6);
+    buffer.writeUInt8(profile.variant.functionCode, 7);
     buffer.writeUInt16BE(startAddress, 8);
     buffer.writeUInt16BE(range.quantity, 10);
     return buffer;
   }
 
-  private buildCandidateVariants(): ReadVariant[] {
-    const candidates: ReadVariant[] = [
-      this.selectedVariant,
+  private buildCandidateProfiles(): ReadProfile[] {
+    const variants: ReadVariant[] = [
+      this.selectedProfile.variant,
       { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: 0 },
       { functionCode: MODBUS_READ_HOLDING_REGISTERS, registerAddressOffset: -1 },
       { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: 0 },
       { functionCode: MODBUS_READ_INPUT_REGISTERS, registerAddressOffset: -1 },
     ];
 
+    const candidateUnitIds = this.buildCandidateUnitIds();
+    const candidates: ReadProfile[] = [
+      this.selectedProfile,
+      ...candidateUnitIds.flatMap(unitId => variants.map(variant => ({ unitId, variant }))),
+    ];
+
     const seen = new Set<string>();
     return candidates.filter(candidate => {
-      const key = `${candidate.functionCode}:${candidate.registerAddressOffset}`;
+      const key = `${candidate.unitId}:${candidate.variant.functionCode}:${candidate.variant.registerAddressOffset}`;
       if (seen.has(key)) {
         return false;
       }
@@ -162,12 +189,34 @@ export class AirobotModbusClient {
     });
   }
 
-  private shouldTryNextVariant(error: unknown): boolean {
+  private buildCandidateUnitIds(): number[] {
+    const candidates = [
+      this.selectedProfile.unitId,
+      this.options.unitId,
+      1,
+      255,
+      0,
+    ].filter(unitId => Number.isInteger(unitId) && unitId >= 0 && unitId <= 255);
+
+    const seen = new Set<number>();
+    return candidates.filter(unitId => {
+      if (seen.has(unitId)) {
+        return false;
+      }
+
+      seen.add(unitId);
+      return true;
+    });
+  }
+
+  private shouldTryNextProfile(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
     }
 
-    return /Modbus exception\s+[12]\b/i.test(error.message);
+    return /Modbus exception\s+[12]\b/i.test(error.message)
+      || /Unexpected Modbus function code/i.test(error.message)
+      || /Unexpected Modbus unit id/i.test(error.message);
   }
 
   private isPlausibleState(state: AirobotState): boolean {
@@ -185,6 +234,7 @@ export class AirobotModbusClient {
     response: Buffer,
     transactionId: number,
     expectedQuantity: number,
+    expectedUnitId: number,
     expectedFunctionCode: number,
   ): number[] | undefined {
     if (response.length < 9) {
@@ -202,6 +252,11 @@ export class AirobotModbusClient {
 
     if (responseTransactionId !== transactionId || protocolId !== 0) {
       throw new Error('Invalid Modbus TCP response header');
+    }
+
+    const responseUnitId = response.readUInt8(6);
+    if (responseUnitId !== expectedUnitId) {
+      throw new Error(`Unexpected Modbus unit id ${responseUnitId}`);
     }
 
     const functionCode = response.readUInt8(7);
