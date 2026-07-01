@@ -11,6 +11,8 @@ export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
+  // 4xxx configuration/status addresses live in Holding Registers (FC03), not Input Registers (FC04).
+  { start: 4020, quantity: 1, optional: true, functionCode: 3 },
   // 2xxx configuration/status addresses live in Holding Registers (FC03), not Input Registers (FC04).
   { start: 2014, quantity: 1, optional: true, functionCode: 3 },
   // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
@@ -57,6 +59,7 @@ export function decodeAirobotState(values: RegisterValues, options: DecodeStateO
     heatRecoveryEfficiency: values.get(1034),
     supplyAirflow: values.get(1051),
     extractAirflow: values.get(1052),
+    filterChangeRequired: readBoolean(values, 4020),
     filterReminderActiveFlags: values.get(2014),
     filterReminderIntervalHours: values.get(2017),
     filterReminderElapsedHours: values.get(2018),
