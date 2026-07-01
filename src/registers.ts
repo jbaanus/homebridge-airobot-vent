@@ -115,6 +115,7 @@ function readSignedTenths(values: RegisterValues, address: number): number | und
 }
 
 function readUInt32(values: RegisterValues, address: number): number | undefined {
+  // Modbus registers are 16-bit; 32-bit values are stored as two consecutive registers (high word, low word).
   const high = values.get(address);
   const low = values.get(address + 1);
   if (typeof high !== 'number' || typeof low !== 'number') {

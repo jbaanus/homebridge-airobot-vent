@@ -33,6 +33,7 @@ Trace lines are emitted as both `info` and `debug`, so they are visible in norma
 Set `modbusUnitId` to match your device if it does not respond on unit id `1`.
 Set `humidifier` to `true` only if your unit has the humidifier/extra sensor option. When `false` (default), registers `1005` and `1010` are ignored and extra temperature/humidity services are not exposed.
 Set `pm25Sensor` to `true` only if your unit has the optional PM2.5 sensor. When `false` (default), register `1031` is ignored and PM2.5 is not exposed.
+Values larger than 16-bit are read from two consecutive Modbus registers (high word + low word).
 
 ## Exposed Values
 
