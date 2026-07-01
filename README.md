@@ -27,6 +27,7 @@ Read-only Homebridge plugin for Airobot ventilation units over Modbus TCP.
 Only `ipAddress` is required. The plugin uses Modbus TCP port `502`, unit id `1`, and polls every 30 seconds.
 
 Set `modbusTrace` to `true` to print detailed Modbus connection, request, and response logs in Homebridge output.
+Trace lines are emitted as both `info` and `debug`, so they are visible in normal logs and in debug mode (`-D`).
 Set `modbusUnitId` to match your device if it does not respond on unit id `1`.
 
 ## Exposed Values

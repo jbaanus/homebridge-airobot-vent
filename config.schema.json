@@ -32,7 +32,7 @@
         "title": "Enable Modbus Trace Logging",
         "type": "boolean",
         "default": false,
-        "description": "Logs Modbus connection details and raw request/response hex frames to Homebridge logs."
+        "description": "Logs Modbus connection details and raw request/response hex frames to Homebridge logs (info and debug levels)."
       }
     }
   }

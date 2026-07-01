@@ -32,16 +32,31 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     this.airobotConfig = this.parseConfig(config);
 
     if (this.airobotConfig) {
+      this.log.info(
+        `Configured Airobot target ip=${this.airobotConfig.ipAddress} unit=${this.airobotConfig.modbusUnitId} `
+        + `modbusTrace=${this.airobotConfig.modbusTrace ? 'on' : 'off'}`,
+      );
+
+      if (this.airobotConfig.modbusTrace) {
+        this.log.warn('Modbus trace logging is enabled; this will generate frequent log entries.');
+      }
+
       this.modbusClient = new AirobotModbusClient({
         host: this.airobotConfig.ipAddress,
         port: MODBUS_TCP_PORT,
         unitId: this.airobotConfig.modbusUnitId,
         timeoutMs: MODBUS_TIMEOUT_MS,
-        debugLog: this.airobotConfig.modbusTrace ? message => this.log.info(`[Modbus] ${message}`) : undefined,
+        debugLog: this.airobotConfig.modbusTrace
+          ? message => {
+            this.log.info(`[Modbus] ${message}`);
+            this.log.debug(`[Modbus] ${message}`);
+          }
+          : undefined,
       });
     }
 
     this.api.on('didFinishLaunching', () => {
+      this.log.info('Homebridge finished launching; starting Airobot discovery and polling.');
       this.discoverDevice();
       this.startPolling();
     });
@@ -85,9 +100,11 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
 
   private startPolling() {
     if (!this.modbusClient || !this.accessoryHandler) {
+      this.log.warn('Polling not started because Modbus client or accessory handler is unavailable.');
       return;
     }
 
+    this.log.info(`Starting Modbus polling every ${Math.round(POLL_INTERVAL_MS / 1000)} seconds.`);
     void this.poll();
     this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
   }
@@ -96,6 +113,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
+      this.log.info('Stopped Modbus polling.');
     }
   }
 
