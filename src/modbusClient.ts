@@ -54,12 +54,20 @@ export class AirobotModbusClient {
 
   private readRegisters(range: RegisterRange, variant: ReadVariant): Promise<number[]> {
     return new Promise((resolve, reject) => {
+      this.logDebug(
+        `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
+        + `(unit=${this.options.unitId}, function=${variant.functionCode}, start=${range.start + variant.registerAddressOffset}, quantity=${range.quantity})`,
+      );
+
       const socket = net.createConnection({
         host: this.options.host,
         port: this.options.port,
       });
       const transactionId = this.nextTransactionId();
       const request = this.buildReadRequest(transactionId, range, variant);
+      this.logDebug(
+        `Sending Modbus request tx=${transactionId} bytes=${request.length} hex=${toHex(request)}`,
+      );
       const chunks: Buffer[] = [];
       let settled = false;
 
@@ -79,7 +87,10 @@ export class AirobotModbusClient {
       };
 
       socket.setTimeout(this.options.timeoutMs);
-      socket.once('connect', () => socket.write(request));
+      socket.once('connect', () => {
+        this.logDebug(`Connected to ${this.options.host}:${this.options.port} tx=${transactionId}`);
+        socket.write(request);
+      });
       socket.once('timeout', () => finish(new Error(`Modbus request to ${this.options.host} timed out`)));
       socket.once('error', error => finish(error));
       socket.on('data', chunk => {
@@ -90,9 +101,13 @@ export class AirobotModbusClient {
 
         chunks.push(chunk);
         const response = Buffer.concat(chunks);
+        this.logDebug(
+          `Received Modbus response tx=${transactionId} chunkBytes=${chunk.length} totalBytes=${response.length} hex=${toHex(response)}`,
+        );
         try {
           const parsed = this.tryParseReadResponse(response, transactionId, range.quantity, variant.functionCode);
           if (parsed) {
+            this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
             finish(undefined, parsed);
           }
         } catch (error) {
@@ -200,4 +215,12 @@ export class AirobotModbusClient {
     this.transactionId = (this.transactionId + 1) % 0xffff;
     return this.transactionId;
   }
+
+  private logDebug(message: string) {
+    this.options.debugLog?.(message);
+  }
+}
+
+function toHex(buffer: Buffer): string {
+  return Array.from(buffer, byte => byte.toString(16).padStart(2, '0')).join(' ');
 }

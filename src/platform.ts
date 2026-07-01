@@ -37,6 +37,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
         port: MODBUS_TCP_PORT,
         unitId: MODBUS_UNIT_ID,
         timeoutMs: MODBUS_TIMEOUT_MS,
+        debugLog: message => this.log.debug(`[Modbus] ${message}`),
       });
     }
 

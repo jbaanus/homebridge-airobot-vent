@@ -59,4 +59,5 @@ export interface AirobotReadOptions {
   port: number;
   unitId: number;
   timeoutMs: number;
+  debugLog?: (message: string) => void;
 }
