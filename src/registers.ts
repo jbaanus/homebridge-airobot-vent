@@ -3,13 +3,15 @@ import type { AirobotErrors, AirobotState } from './types.js';
 export interface RegisterRange {
   start: number;
   quantity: number;
+  optional?: boolean;
 }
 
 export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
-  { start: 2017, quantity: 2 },
+  // Some Airobot variants do not expose filter reminder registers.
+  { start: 2017, quantity: 2, optional: true },
 ];
 
 export type RegisterValues = Map<number, number>;

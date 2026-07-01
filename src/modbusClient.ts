@@ -66,8 +66,21 @@ export class AirobotModbusClient {
     const values: RegisterValues = new Map();
 
     for (const range of READ_RANGES) {
-      const registers = await this.readRegisters(range, profile);
-      registers.forEach((value, index) => values.set(range.start + index, value));
+      try {
+        const registers = await this.readRegisters(range, profile);
+        registers.forEach((value, index) => values.set(range.start + index, value));
+      } catch (error) {
+        if (range.optional && this.isIllegalDataAddressError(error)) {
+          this.logDebug(
+            `Skipping optional range start=${range.start} quantity=${range.quantity} `
+            + `for unit=${profile.unitId} function=${profile.variant.functionCode} `
+            + `offset=${profile.variant.registerAddressOffset} due to illegal data address`,
+          );
+          continue;
+        }
+
+        throw error;
+      }
     }
 
     return decodeAirobotState(values);
@@ -139,7 +152,11 @@ export class AirobotModbusClient {
             finish(undefined, parsed);
           }
         } catch (error) {
-          finish(error instanceof Error ? error : new Error(String(error)));
+          const message = error instanceof Error ? error.message : String(error);
+          finish(new Error(
+            `${message} (unit=${profile.unitId}, function=${profile.variant.functionCode}, `
+            + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
+          ));
         }
       });
     });
@@ -217,6 +234,10 @@ export class AirobotModbusClient {
     return /Modbus exception\s+[12]\b/i.test(error.message)
       || /Unexpected Modbus function code/i.test(error.message)
       || /Unexpected Modbus unit id/i.test(error.message);
+  }
+
+  private isIllegalDataAddressError(error: unknown): boolean {
+    return error instanceof Error && /Modbus exception\s+2\b/i.test(error.message);
   }
 
   private isPlausibleState(state: AirobotState): boolean {
