@@ -11,6 +11,8 @@ export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
+  // 2xxx configuration/status addresses live in Holding Registers (FC03), not Input Registers (FC04).
+  { start: 2014, quantity: 1, optional: true, functionCode: 3 },
   // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
   { start: 2017, quantity: 2, optional: true, functionCode: 3 },
 ];
@@ -55,9 +57,10 @@ export function decodeAirobotState(values: RegisterValues, options: DecodeStateO
     heatRecoveryEfficiency: values.get(1034),
     supplyAirflow: values.get(1051),
     extractAirflow: values.get(1052),
+    filterReminderActiveFlags: values.get(2014),
     filterReminderIntervalHours: values.get(2017),
     filterReminderElapsedHours: values.get(2018),
-    filterLifeLevel: decodeFilterLife(values.get(2017), values.get(2018)),
+    filterLifeLevel: decodeFilterLife(values.get(2017), values.get(2018), values.get(2014)),
     lastUpdated: new Date(),
   };
 }
@@ -84,7 +87,12 @@ function decodeFirmware(value?: number): string | undefined {
   return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, '0')}`;
 }
 
-function decodeFilterLife(intervalHours?: number, elapsedHours?: number): number | undefined {
+function decodeFilterLife(intervalHours?: number, elapsedHours?: number, activeFlags?: number): number | undefined {
+  // Active flag bit 16 means filter replacement is due.
+  if (typeof activeFlags === 'number' && hasBit(activeFlags, 16)) {
+    return 0;
+  }
+
   if (!intervalHours || typeof elapsedHours !== 'number') {
     return undefined;
   }

@@ -36,6 +36,7 @@ export interface AirobotState {
   heatRecoveryEfficiency?: number;
   supplyAirflow?: number;
   extractAirflow?: number;
+  filterReminderActiveFlags?: number;
   filterReminderIntervalHours?: number;
   filterReminderElapsedHours?: number;
   filterLifeLevel?: number;

@@ -217,7 +217,11 @@ export class AirobotPlatformAccessory {
   }
 
   private getFilterChangeIndication(): CharacteristicValue {
-    const needsChange = this.state?.errors?.filter || (typeof this.state?.filterLifeLevel === 'number' && this.state.filterLifeLevel <= 0);
+    const hasFilterReminderFlag = typeof this.state?.filterReminderActiveFlags === 'number'
+      && (this.state.filterReminderActiveFlags & 16) === 16;
+    const needsChange = hasFilterReminderFlag
+      || this.state?.errors?.filter
+      || (typeof this.state?.filterLifeLevel === 'number' && this.state.filterLifeLevel <= 0);
     return needsChange
       ? this.platform.Characteristic.FilterChangeIndication.CHANGE_FILTER
       : this.platform.Characteristic.FilterChangeIndication.FILTER_OK;
