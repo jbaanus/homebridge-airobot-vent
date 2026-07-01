@@ -46,9 +46,6 @@ export class AirobotPlatformAccessory {
 
     this.temperatureServices.push(
       this.createTemperatureService('Extract Air Temperature', 'extract-temperature', state => state.temperatures.extract),
-      this.createTemperatureService('Supply Air Temperature', 'supply-temperature', state => state.temperatures.supply),
-      this.createTemperatureService('Outside Air Temperature', 'outside-temperature', state => state.temperatures.outside),
-      this.createTemperatureService('Exhaust Air Temperature', 'exhaust-temperature', state => state.temperatures.exhaust),
     );
 
     this.humidityServices.push(
