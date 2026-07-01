@@ -71,9 +71,11 @@ export class AirobotModbusClient {
         registers.forEach((value, index) => values.set(range.start + index, value));
       } catch (error) {
         if (range.optional && this.isIllegalDataAddressError(error)) {
+          const functionCode = this.getFunctionCodeForRange(range, profile);
+          const startAddress = range.start + profile.variant.registerAddressOffset;
           this.logDebug(
-            `Skipping optional range start=${range.start} quantity=${range.quantity} `
-            + `for unit=${profile.unitId} function=${profile.variant.functionCode} `
+            `Skipping optional range start=${startAddress} quantity=${range.quantity} `
+            + `for unit=${profile.unitId} function=${functionCode} `
             + `offset=${profile.variant.registerAddressOffset} due to illegal data address`,
           );
           continue;
