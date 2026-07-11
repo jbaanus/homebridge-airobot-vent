@@ -1,3 +1,4 @@
+import { SIGNALS, type SignalDescriptor, type SignalSource } from './registerSignalSchema.js';
 import type { AirobotErrors, AirobotState } from './types.js';
 
 export type RegisterValues = Map<number, number>;
@@ -49,72 +50,105 @@ export const REGISTER_SCHEMA: RegisterSchemaEntry[] = [
 const addressByKey = new Map(REGISTER_SCHEMA.map(entry => [entry.key, entry.start]));
 
 export function decodeAirobotStateFromSchema(values: RegisterValues, options: DecodeStateOptions = {}): AirobotState {
-  const humidifierEnabled = options.humidifier === true;
-  const pm25SensorEnabled = options.pm25Sensor === true;
-
-  const firmwareVersionAddress = address('firmwareVersion');
-  const temperatureExtractAddress = address('temperatureExtract');
-  const temperatureSupplyAddress = address('temperatureSupply');
-  const temperatureOutsideAddress = address('temperatureOutside');
-  const temperatureExhaustAddress = address('temperatureExhaust');
-  const temperatureExtraAddress = address('temperatureExtra');
-  const humidityExtractAddress = address('humidityExtract');
-  const humiditySupplyAddress = address('humiditySupply');
-  const humidityOutsideAddress = address('humidityOutside');
-  const humidityExhaustAddress = address('humidityExhaust');
-  const humidityExtraAddress = address('humidityExtra');
-  const co2Address = address('co2');
-  const supplyFanLevelAddress = address('supplyFanLevel');
-  const extractFanLevelAddress = address('extractFanLevel');
-  const supplyFanRpmAddress = address('supplyFanRpm');
-  const extractFanRpmAddress = address('extractFanRpm');
-  const workingTimeAddress = address('workingTime');
-  const errorsBlockAddress = address('errorsAndSensorsBlock');
-  const serverConnectedAddress = errorsBlockAddress + 2;
-  const vocAddress = errorsBlockAddress + 3;
-  const pm25Address = errorsBlockAddress + 5;
-  const heatRecoveryEfficiencyAddress = errorsBlockAddress + 8;
-  const supplyAirflowAddress = address('supplyAirflow');
-  const extractAirflowAddress = address('extractAirflow');
-  const filterChangeRequiredAddress = address('filterChangeRequired');
-  const filterReminderIntervalHoursAddress = address('filterReminderIntervalHours');
-  const filterReminderElapsedHoursAddress = address('filterReminderElapsedHours');
+  const firmwareVersion = decodeSignal(values, SIGNALS.firmwareVersion, options) as string | undefined;
+  const temperatureExtract = decodeSignal(values, SIGNALS.temperatureExtract, options) as number | undefined;
+  const temperatureSupply = decodeSignal(values, SIGNALS.temperatureSupply, options) as number | undefined;
+  const temperatureOutside = decodeSignal(values, SIGNALS.temperatureOutside, options) as number | undefined;
+  const temperatureExhaust = decodeSignal(values, SIGNALS.temperatureExhaust, options) as number | undefined;
+  const temperatureExtra = decodeSignal(values, SIGNALS.temperatureExtra, options) as number | undefined;
+  const humidityExtract = decodeSignal(values, SIGNALS.humidityExtract, options) as number | undefined;
+  const humiditySupply = decodeSignal(values, SIGNALS.humiditySupply, options) as number | undefined;
+  const humidityOutside = decodeSignal(values, SIGNALS.humidityOutside, options) as number | undefined;
+  const humidityExhaust = decodeSignal(values, SIGNALS.humidityExhaust, options) as number | undefined;
+  const humidityExtra = decodeSignal(values, SIGNALS.humidityExtra, options) as number | undefined;
+  const co2 = decodeSignal(values, SIGNALS.co2, options) as number | undefined;
+  const supplyFanLevel = decodeSignal(values, SIGNALS.supplyFanLevel, options) as number | undefined;
+  const extractFanLevel = decodeSignal(values, SIGNALS.extractFanLevel, options) as number | undefined;
+  const supplyFanRpm = decodeSignal(values, SIGNALS.supplyFanRpm, options) as number | undefined;
+  const extractFanRpm = decodeSignal(values, SIGNALS.extractFanRpm, options) as number | undefined;
+  const workingTime = decodeSignal(values, SIGNALS.workingTime, options) as number | undefined;
+  const errorsRaw = decodeSignal(values, SIGNALS.errorsRaw, options) as number | undefined;
+  const serverConnected = decodeSignal(values, SIGNALS.serverConnected, options) as boolean | undefined;
+  const voc = decodeSignal(values, SIGNALS.voc, options) as number | undefined;
+  const pm25 = decodeSignal(values, SIGNALS.pm25, options) as number | undefined;
+  const heatRecoveryEfficiency = decodeSignal(values, SIGNALS.heatRecoveryEfficiency, options) as number | undefined;
+  const supplyAirflow = decodeSignal(values, SIGNALS.supplyAirflow, options) as number | undefined;
+  const extractAirflow = decodeSignal(values, SIGNALS.extractAirflow, options) as number | undefined;
+  const filterChangeRequired = decodeSignal(values, SIGNALS.filterChangeRequired, options) as boolean | undefined;
+  const filterReminderIntervalHours = decodeSignal(values, SIGNALS.filterReminderIntervalHours, options) as number | undefined;
+  const filterReminderElapsedHours = decodeSignal(values, SIGNALS.filterReminderElapsedHours, options) as number | undefined;
 
   return {
-    firmwareVersion: decodeFirmware(values.get(firmwareVersionAddress)),
+    firmwareVersion,
     temperatures: {
-      extract: readSignedTenths(values, temperatureExtractAddress),
-      supply: readSignedTenths(values, temperatureSupplyAddress),
-      outside: readSignedTenths(values, temperatureOutsideAddress),
-      exhaust: readSignedTenths(values, temperatureExhaustAddress),
-      extra: humidifierEnabled ? readSignedTenths(values, temperatureExtraAddress) : undefined,
+      extract: temperatureExtract,
+      supply: temperatureSupply,
+      outside: temperatureOutside,
+      exhaust: temperatureExhaust,
+      extra: temperatureExtra,
     },
     humidity: {
-      extract: readTenths(values, humidityExtractAddress),
-      supply: readTenths(values, humiditySupplyAddress),
-      outside: readTenths(values, humidityOutsideAddress),
-      exhaust: readTenths(values, humidityExhaustAddress),
-      extra: humidifierEnabled ? readTenths(values, humidityExtraAddress) : undefined,
+      extract: humidityExtract,
+      supply: humiditySupply,
+      outside: humidityOutside,
+      exhaust: humidityExhaust,
+      extra: humidityExtra,
     },
-    co2: values.get(co2Address),
-    supplyFanLevel: values.get(supplyFanLevelAddress),
-    extractFanLevel: values.get(extractFanLevelAddress),
-    supplyFanRpm: values.get(supplyFanRpmAddress),
-    extractFanRpm: values.get(extractFanRpmAddress),
-    workingTimeMs: readUInt32(values, workingTimeAddress),
-    errors: decodeErrors(readUInt32(values, errorsBlockAddress) ?? 0),
-    serverConnected: readBoolean(values, serverConnectedAddress),
-    voc: values.get(vocAddress),
-    pm25: pm25SensorEnabled ? readBoundedUInt32(values, pm25Address, 0, 1000) : undefined,
-    heatRecoveryEfficiency: values.get(heatRecoveryEfficiencyAddress),
-    supplyAirflow: values.get(supplyAirflowAddress),
-    extractAirflow: values.get(extractAirflowAddress),
-    filterChangeRequired: readBoolean(values, filterChangeRequiredAddress),
-    filterReminderIntervalHours: values.get(filterReminderIntervalHoursAddress),
-    filterReminderElapsedHours: values.get(filterReminderElapsedHoursAddress),
-    filterLifeLevel: decodeFilterLife(values.get(filterReminderIntervalHoursAddress), values.get(filterReminderElapsedHoursAddress)),
+    co2,
+    supplyFanLevel,
+    extractFanLevel,
+    supplyFanRpm,
+    extractFanRpm,
+    workingTimeMs: workingTime,
+    errors: decodeErrors(errorsRaw ?? 0),
+    serverConnected,
+    voc,
+    pm25,
+    heatRecoveryEfficiency,
+    supplyAirflow,
+    extractAirflow,
+    filterChangeRequired,
+    filterReminderIntervalHours,
+    filterReminderElapsedHours,
+    filterLifeLevel: decodeFilterLife(filterReminderIntervalHours, filterReminderElapsedHours),
     lastUpdated: new Date(),
   };
+}
+
+function decodeSignal(values: RegisterValues, descriptor: SignalDescriptor, options: DecodeStateOptions): unknown {
+  if (!isSignalEnabled(descriptor, options)) {
+    return undefined;
+  }
+
+  const registerAddress = resolveAddress(descriptor.source);
+  switch (descriptor.decoder.kind) {
+  case 'firmware':
+    return decodeFirmware(values.get(registerAddress));
+  case 'uint16':
+    return values.get(registerAddress);
+  case 'uint32':
+    return readUInt32(values, registerAddress);
+  case 'signedTenths':
+    return readSignedTenths(values, registerAddress);
+  case 'tenths':
+    return readTenths(values, registerAddress);
+  case 'boolean':
+    return readBoolean(values, registerAddress);
+  case 'boundedUInt32':
+    return readBoundedUInt32(values, registerAddress, descriptor.decoder.min, descriptor.decoder.max);
+  }
+}
+
+function isSignalEnabled(descriptor: SignalDescriptor, options: DecodeStateOptions): boolean {
+  if (!descriptor.requires) {
+    return true;
+  }
+
+  return options[descriptor.requires] === true;
+}
+
+function resolveAddress(source: SignalSource): number {
+  return address(source.registerKey) + (source.offset ?? 0);
 }
 
 function address(key: string): number {
