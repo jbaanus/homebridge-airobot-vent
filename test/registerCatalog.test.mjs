@@ -2,6 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { REGISTER_CATALOG, generateReadRanges } from '../dist/registerCatalog.js';
+import { REGISTER_SCHEMA } from '../dist/registerSchema.js';
+
+test('register catalog stays aligned with register schema metadata', () => {
+  const schemaProjection = REGISTER_SCHEMA.map(entry => ({
+    key: entry.key,
+    start: entry.start,
+    ...(typeof entry.quantity === 'number' ? { quantity: entry.quantity } : {}),
+    ...(typeof entry.optional === 'boolean' ? { optional: entry.optional } : {}),
+    ...(typeof entry.functionCode === 'number' ? { functionCode: entry.functionCode } : {}),
+  }));
+
+  assert.deepEqual(REGISTER_CATALOG, schemaProjection);
+});
 
 test('generateReadRanges reproduces the current read plan from catalog', () => {
   const ranges = generateReadRanges(REGISTER_CATALOG);
