@@ -21,7 +21,6 @@ test('generateReadRanges reproduces the current read plan from catalog', () => {
 
   assert.deepEqual(ranges, [
     { start: 1000, quantity: 12 },
-    { start: 1012, quantity: 2, optional: true, functionCode: 3 },
     { start: 1014, quantity: 6 },
     { start: 1026, quantity: 10 },
     { start: 1051, quantity: 2 },

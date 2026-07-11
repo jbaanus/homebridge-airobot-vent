@@ -77,19 +77,17 @@ function buildResponse({
 test('uses fixed profile for each poll', async () => {
   const transport = new RecordingTransport([
     { response: buildRegisterResponse({ transactionId: 1, unitId: 1, functionCode: 4, values: [100, ...Array(11).fill(0)] }) },
-    { response: buildRegisterResponse({ transactionId: 2, unitId: 1, functionCode: 3, values: Array(2).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 3, unitId: 1, functionCode: 4, values: Array(6).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 4, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 5, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
-    { response: buildCoilResponse({ transactionId: 6, unitId: 1, functionCode: 1, bits: [0] }) },
-    { response: buildRegisterResponse({ transactionId: 7, unitId: 1, functionCode: 3, values: [100, 0] }) },
-    { response: buildRegisterResponse({ transactionId: 8, unitId: 1, functionCode: 4, values: [100, ...Array(11).fill(0)] }) },
-    { response: buildRegisterResponse({ transactionId: 9, unitId: 1, functionCode: 3, values: Array(2).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 10, unitId: 1, functionCode: 4, values: Array(6).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 11, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 12, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
-    { response: buildCoilResponse({ transactionId: 13, unitId: 1, functionCode: 1, bits: [0] }) },
-    { response: buildRegisterResponse({ transactionId: 14, unitId: 1, functionCode: 3, values: [100, 0] }) },
+    { response: buildRegisterResponse({ transactionId: 2, unitId: 1, functionCode: 4, values: Array(6).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 3, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 4, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
+    { response: buildCoilResponse({ transactionId: 5, unitId: 1, functionCode: 1, bits: [0] }) },
+    { response: buildRegisterResponse({ transactionId: 6, unitId: 1, functionCode: 3, values: [100, 0] }) },
+    { response: buildRegisterResponse({ transactionId: 7, unitId: 1, functionCode: 4, values: [100, ...Array(11).fill(0)] }) },
+    { response: buildRegisterResponse({ transactionId: 8, unitId: 1, functionCode: 4, values: Array(6).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 9, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 10, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
+    { response: buildCoilResponse({ transactionId: 11, unitId: 1, functionCode: 1, bits: [0] }) },
+    { response: buildRegisterResponse({ transactionId: 12, unitId: 1, functionCode: 3, values: [100, 0] }) },
   ]);
 
   const client = new AirobotModbusClient({
@@ -105,9 +103,9 @@ test('uses fixed profile for each poll', async () => {
   await client.readState();
 
   const firstStartAddress = transport.requests[0].request.readUInt16BE(8);
-  const secondPollStartAddress = transport.requests[7].request.readUInt16BE(8);
+  const secondPollStartAddress = transport.requests[6].request.readUInt16BE(8);
   const firstFunctionCode = transport.requests[0].request.readUInt8(7);
-  const secondFunctionCode = transport.requests[7].request.readUInt8(7);
+  const secondFunctionCode = transport.requests[6].request.readUInt8(7);
 
   assert.equal(firstStartAddress, 1000);
   assert.equal(secondPollStartAddress, 1000);

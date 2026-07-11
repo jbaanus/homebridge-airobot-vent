@@ -9,7 +9,6 @@ export type SignalDecoder =
   | { kind: 'firmware' }
   | { kind: 'uint16' }
   | { kind: 'uint32' }
-  | { kind: 'ascii'; words: number }
   | { kind: 'signedTenths' }
   | { kind: 'tenths' }
   | { kind: 'boolean' }
@@ -22,10 +21,6 @@ export interface SignalDescriptor {
 }
 
 export const SIGNALS = {
-  serialNumber: {
-    source: { registerKey: 'serialNumber' },
-    decoder: { kind: 'ascii', words: 2 },
-  },
   firmwareVersion: {
     source: { registerKey: 'firmwareVersion' },
     decoder: { kind: 'firmware' },

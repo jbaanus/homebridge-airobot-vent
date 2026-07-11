@@ -6,7 +6,6 @@ import { projectHomeKitState } from '../dist/homeKitProjection.js';
 test('defaults to safe values when state is unavailable and communication failed', () => {
   const projection = projectHomeKitState(undefined, true);
 
-  assert.equal(projection.accessoryInformation.serialNumber, 'Unknown');
   assert.equal(projection.accessoryInformation.firmwareRevision, 'Unknown');
   assert.equal(projection.fan.active, false);
   assert.equal(projection.fan.rotationSpeed, 0);
@@ -25,7 +24,6 @@ test('defaults to safe values when state is unavailable and communication failed
 
 test('projects fan status and faults from state when communication is healthy', () => {
   const projection = projectHomeKitState({
-    serialNumber: '12345678',
     firmwareVersion: '2.04',
     temperatures: { extract: 21.5, extra: 23.1 },
     humidity: { extract: 44.4, extra: 51.2 },
@@ -51,7 +49,6 @@ test('projects fan status and faults from state when communication is healthy', 
     lastUpdated: new Date(),
   }, false);
 
-  assert.equal(projection.accessoryInformation.serialNumber, '12345678');
   assert.equal(projection.accessoryInformation.firmwareRevision, '2.04');
   assert.equal(projection.fan.rotationSpeed, 50);
   assert.equal(projection.fan.active, true);
