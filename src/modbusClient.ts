@@ -84,8 +84,6 @@ export class AirobotModbusClient {
       }
     }
 
-    this.logDebug(`Register table:\n${formatRegisterTable(values)}`);
-
     return decodeAirobotState(values, {
       humidifier: this.options.humidifier,
       pm25Sensor: this.options.pm25Sensor,
@@ -366,28 +364,3 @@ function formatRegisterValues(startAddress: number, values: number[]): string {
     .join(', ');
 }
 
-function formatRegisterTable(values: RegisterValues): string {
-  const entries = Array.from(values.entries()).sort((left, right) => left[0] - right[0]);
-  if (entries.length === 0) {
-    return 'Address | Value\n--- | ---\n(none)';
-  }
-
-  const rows = entries.map(([address, value]) => `${address} | ${value}`);
-  const has2xxx = entries.some(([address]) => address >= 2000 && address < 3000);
-  const has4xxx = entries.some(([address]) => address >= 4000 && address < 5000);
-  const notes: string[] = [];
-
-  if (!has2xxx) {
-    notes.push('- No values in 2xxx range');
-  }
-
-  if (!has4xxx) {
-    notes.push('- No values in 4xxx range');
-  }
-
-  if (notes.length === 0) {
-    return ['Address | Value', '--- | ---', ...rows].join('\n');
-  }
-
-  return ['Address | Value', '--- | ---', ...rows, '', 'Notes:', ...notes].join('\n');
-}

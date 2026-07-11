@@ -3,7 +3,7 @@ import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAcces
 import { AirobotModbusClient } from './modbusClient.js';
 import { AirobotPlatformAccessory } from './platformAccessory.js';
 import { READ_RANGES } from './registers.js';
-import { BUILD_COUNTER, PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type { AirobotPlatformConfig, AirobotState } from './types.js';
 
 const DEFAULT_NAME = 'Airobot Ventilation';
@@ -37,8 +37,6 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
     this.airobotConfig = this.parseConfig(config);
-
-    this.log.info(`Plugin build counter: ${BUILD_COUNTER}`);
 
     if (this.airobotConfig) {
       this.log.info(
