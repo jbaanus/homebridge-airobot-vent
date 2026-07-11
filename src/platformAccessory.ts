@@ -1,21 +1,21 @@
 import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 
-import { fanLevelToPercentage, hasFault } from './registers.js';
+import { projectHomeKitState } from './homeKitProjection.js';
 import type { AirobotVentilationPlatform } from './platform.js';
-import type { AirobotState } from './types.js';
 
-type NumericValue = number | undefined;
+type TemperatureProjectionKey = 'extract' | 'extra';
+type HumidityProjectionKey = 'extract' | 'extra';
 
 export class AirobotPlatformAccessory {
   private readonly fanService: Service;
   private readonly filterService: Service;
-  private readonly temperatureServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
-  private readonly humidityServices: Array<{ service: Service; read: (state: AirobotState) => NumericValue }> = [];
+  private readonly temperatureServices: Array<{ service: Service; key: TemperatureProjectionKey }> = [];
+  private readonly humidityServices: Array<{ service: Service; key: HumidityProjectionKey }> = [];
   private readonly co2Service: Service;
   private readonly airQualityService?: Service;
 
-  private state?: AirobotState;
   private communicationFailed = true;
+  private projection = projectHomeKitState(undefined, true);
 
   constructor(
     private readonly platform: AirobotVentilationPlatform,
@@ -44,7 +44,7 @@ export class AirobotPlatformAccessory {
     this.filterService.getCharacteristic(this.platform.Characteristic.FilterLifeLevel).onGet(() => this.getFilterLifeLevel());
 
     this.temperatureServices.push(
-      this.createTemperatureService('Extract Air Temperature', 'extract-temperature', state => state.temperatures.extract),
+      this.createTemperatureService('Extract Air Temperature', 'extract-temperature', 'extract'),
     );
 
     this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'supply-temperature');
@@ -52,7 +52,7 @@ export class AirobotPlatformAccessory {
     this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'exhaust-temperature');
 
     this.humidityServices.push(
-      this.createHumidityService('Extract Air Humidity', 'extract-humidity', state => state.humidity.extract),
+      this.createHumidityService('Extract Air Humidity', 'extract-humidity', 'extract'),
     );
 
     this.removeSensorIfPresent(this.platform.Service.HumiditySensor, 'supply-humidity');
@@ -61,10 +61,10 @@ export class AirobotPlatformAccessory {
 
     if (humidifierEnabled) {
       this.temperatureServices.push(
-        this.createTemperatureService('Extra Temperature', 'extra-temperature', state => state.temperatures.extra),
+        this.createTemperatureService('Extra Temperature', 'extra-temperature', 'extra'),
       );
       this.humidityServices.push(
-        this.createHumidityService('Extra Humidity', 'extra-humidity', state => state.humidity.extra),
+        this.createHumidityService('Extra Humidity', 'extra-humidity', 'extra'),
       );
     } else {
       this.removeSensorIfPresent(this.platform.Service.TemperatureSensor, 'extra-temperature');
@@ -74,7 +74,7 @@ export class AirobotPlatformAccessory {
     this.co2Service = this.accessory.getService(this.platform.Service.CarbonDioxideSensor)
       ?? this.accessory.addService(this.platform.Service.CarbonDioxideSensor, 'CO2', 'co2');
     this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideDetected).onGet(() => this.getCo2Detected());
-    this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideLevel).onGet(() => this.getNumber(state => state.co2, 0));
+    this.co2Service.getCharacteristic(this.platform.Characteristic.CarbonDioxideLevel).onGet(() => this.getCo2Level());
     this.co2Service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getCo2Fault());
 
     if (pm25SensorEnabled) {
@@ -88,15 +88,15 @@ export class AirobotPlatformAccessory {
     this.logExposedCharacteristics();
   }
 
-  updateState(state: AirobotState) {
-    this.state = state;
+  updateState(state: Parameters<typeof projectHomeKitState>[0]) {
     this.communicationFailed = false;
+    this.projection = projectHomeKitState(state, this.communicationFailed);
 
     const accessoryInfoService = this.accessory.getService(this.platform.Service.AccessoryInformation)!;
     this.updateCharacteristicWithLog(
       accessoryInfoService,
       this.platform.Characteristic.FirmwareRevision,
-      state.firmwareVersion ?? 'Unknown',
+      this.projection.accessoryInformation.firmwareRevision,
     );
 
     this.updateCharacteristicWithLog(this.fanService, this.platform.Characteristic.Active, this.getFanActive());
@@ -111,22 +111,23 @@ export class AirobotPlatformAccessory {
     this.updateCharacteristicWithLog(this.filterService, this.platform.Characteristic.FilterLifeLevel, this.getFilterLifeLevel());
 
     for (const item of this.temperatureServices) {
-      this.updateNumber(item.service, this.platform.Characteristic.CurrentTemperature, item.read(state));
+      this.updateNumber(item.service, this.platform.Characteristic.CurrentTemperature, this.getProjectedTemperature(item.key));
     }
 
     for (const item of this.humidityServices) {
-      this.updateNumber(item.service, this.platform.Characteristic.CurrentRelativeHumidity, item.read(state));
+      this.updateNumber(item.service, this.platform.Characteristic.CurrentRelativeHumidity, this.getProjectedHumidity(item.key));
     }
 
     this.updateCharacteristicWithLog(this.co2Service, this.platform.Characteristic.CarbonDioxideDetected, this.getCo2Detected());
-    this.updateNumber(this.co2Service, this.platform.Characteristic.CarbonDioxideLevel, state.co2);
+    this.updateNumber(this.co2Service, this.platform.Characteristic.CarbonDioxideLevel, this.projection.co2.level);
     this.updateCharacteristicWithLog(this.co2Service, this.platform.Characteristic.StatusFault, this.getCo2Fault());
 
-    this.updateAirQuality(state);
+    this.updateAirQuality();
   }
 
   markCommunicationFailure() {
     this.communicationFailed = true;
+    this.projection = projectHomeKitState(undefined, this.communicationFailed);
     this.updateCharacteristicWithLog(
       this.fanService,
       this.platform.Characteristic.StatusFault,
@@ -134,20 +135,20 @@ export class AirobotPlatformAccessory {
     );
   }
 
-  private createTemperatureService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
+  private createTemperatureService(name: string, subtype: string, key: TemperatureProjectionKey) {
     const service = this.accessory.getService(name)
       ?? this.accessory.addService(this.platform.Service.TemperatureSensor, name, subtype);
-    service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).onGet(() => this.getNumber(read, 0));
-    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
-    return { service, read };
+    service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).onGet(() => this.getTemperatureValue(key));
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getTemperatureFault());
+    return { service, key };
   }
 
-  private createHumidityService(name: string, subtype: string, read: (state: AirobotState) => NumericValue) {
+  private createHumidityService(name: string, subtype: string, key: HumidityProjectionKey) {
     const service = this.accessory.getService(name)
       ?? this.accessory.addService(this.platform.Service.HumiditySensor, name, subtype);
-    service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity).onGet(() => this.getNumber(read, 0));
-    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
-    return { service, read };
+    service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity).onGet(() => this.getHumidityValue(key));
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getHumidityFault());
+    return { service, key };
   }
 
   private createAirQualityService(name: string, subtype: string) {
@@ -155,9 +156,9 @@ export class AirobotPlatformAccessory {
       ?? this.accessory.addService(this.platform.Service.AirQualitySensor, name, subtype);
     service.getCharacteristic(this.platform.Characteristic.AirQuality).onGet(() => this.getAirQuality());
 
-    service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getNumber(state => state.pm25, 0));
+    service.getCharacteristic(this.platform.Characteristic.PM2_5Density).onGet(() => this.getPm25Density());
 
-    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getStatusFault());
+    service.getCharacteristic(this.platform.Characteristic.StatusFault).onGet(() => this.getAirQualityFault());
     return service;
   }
 
@@ -192,64 +193,87 @@ export class AirobotPlatformAccessory {
   }
 
   private getFanActive(): CharacteristicValue {
-    if (this.communicationFailed) {
-      return this.platform.Characteristic.Active.INACTIVE;
-    }
-
-    const speed = fanLevelToPercentage(this.state?.supplyFanLevel, this.state?.extractFanLevel) ?? 0;
-    return speed > 0 ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
+    return this.projection.fan.active
+      ? this.platform.Characteristic.Active.ACTIVE
+      : this.platform.Characteristic.Active.INACTIVE;
   }
 
   private getFanSpeed(): CharacteristicValue {
-    return fanLevelToPercentage(this.state?.supplyFanLevel, this.state?.extractFanLevel) ?? 0;
+    return this.projection.fan.rotationSpeed;
   }
 
   private getStatusFault(): CharacteristicValue {
-    return this.communicationFailed || hasFault(this.state?.errors)
+    return this.projection.fan.statusFault
       ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
       : this.platform.Characteristic.StatusFault.NO_FAULT;
   }
 
   private getCo2Fault(): CharacteristicValue {
-    return this.communicationFailed || this.state?.errors?.co2Sensor
+    return this.projection.co2.statusFault
       ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
       : this.platform.Characteristic.StatusFault.NO_FAULT;
   }
 
   private getFilterChangeIndication(): CharacteristicValue {
-    if (typeof this.state?.filterChangeRequired === 'boolean') {
-      return this.state.filterChangeRequired
-        ? this.platform.Characteristic.FilterChangeIndication.CHANGE_FILTER
-        : this.platform.Characteristic.FilterChangeIndication.FILTER_OK;
-    }
-
-    const needsChange = this.state?.errors?.filter || (typeof this.state?.filterLifeLevel === 'number' && this.state.filterLifeLevel <= 0);
-    return needsChange
+    return this.projection.filter.needsChange
       ? this.platform.Characteristic.FilterChangeIndication.CHANGE_FILTER
       : this.platform.Characteristic.FilterChangeIndication.FILTER_OK;
   }
 
   private getFilterLifeLevel(): CharacteristicValue {
-    return this.state?.filterLifeLevel ?? 100;
+    return this.projection.filter.lifeLevel;
   }
 
   private getCo2Detected(): CharacteristicValue {
-    const co2 = this.state?.co2 ?? 0;
-    return co2 >= 1000
+    return this.projection.co2.detected
       ? this.platform.Characteristic.CarbonDioxideDetected.CO2_LEVELS_ABNORMAL
       : this.platform.Characteristic.CarbonDioxideDetected.CO2_LEVELS_NORMAL;
   }
 
-  private getAirQuality(): CharacteristicValue {
-    return this.platform.Characteristic.AirQuality.UNKNOWN;
+  private getCo2Level(): CharacteristicValue {
+    return this.projection.co2.level ?? 0;
   }
 
-  private getNumber(read: (state: AirobotState) => NumericValue, fallback: number): CharacteristicValue {
-    if (!this.state) {
-      return fallback;
-    }
+  private getTemperatureValue(key: TemperatureProjectionKey): CharacteristicValue {
+    return this.getProjectedTemperature(key) ?? 0;
+  }
 
-    return read(this.state) ?? fallback;
+  private getHumidityValue(key: HumidityProjectionKey): CharacteristicValue {
+    return this.getProjectedHumidity(key) ?? 0;
+  }
+
+  private getTemperatureFault(): CharacteristicValue {
+    return this.projection.temperature.statusFault
+      ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
+      : this.platform.Characteristic.StatusFault.NO_FAULT;
+  }
+
+  private getHumidityFault(): CharacteristicValue {
+    return this.projection.humidity.statusFault
+      ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
+      : this.platform.Characteristic.StatusFault.NO_FAULT;
+  }
+
+  private getPm25Density(): CharacteristicValue {
+    return this.projection.airQuality.pm25Density ?? 0;
+  }
+
+  private getAirQualityFault(): CharacteristicValue {
+    return this.projection.airQuality.statusFault
+      ? this.platform.Characteristic.StatusFault.GENERAL_FAULT
+      : this.platform.Characteristic.StatusFault.NO_FAULT;
+  }
+
+  private getProjectedTemperature(key: TemperatureProjectionKey): number | undefined {
+    return this.projection.temperature[key];
+  }
+
+  private getProjectedHumidity(key: HumidityProjectionKey): number | undefined {
+    return this.projection.humidity[key];
+  }
+
+  private getAirQuality(): CharacteristicValue {
+    return this.platform.Characteristic.AirQuality.UNKNOWN;
   }
 
   private updateNumber(service: Service, characteristic: Parameters<Service['updateCharacteristic']>[0], value?: number) {
@@ -258,12 +282,12 @@ export class AirobotPlatformAccessory {
     }
   }
 
-  private updateAirQuality(state: AirobotState) {
+  private updateAirQuality() {
     if (!this.airQualityService) {
       return;
     }
 
     this.updateCharacteristicWithLog(this.airQualityService, this.platform.Characteristic.AirQuality, this.getAirQuality());
-    this.updateNumber(this.airQualityService, this.platform.Characteristic.PM2_5Density, state.pm25);
+    this.updateNumber(this.airQualityService, this.platform.Characteristic.PM2_5Density, this.projection.airQuality.pm25Density);
   }
 }
