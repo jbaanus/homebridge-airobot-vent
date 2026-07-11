@@ -1,14 +1,13 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
 import { AirobotModbusClient } from './modbusClient.js';
+import { normalizeAirobotPlatformConfig } from './platformConfigNormalizer.js';
 import { AirobotPlatformAccessory } from './platformAccessory.js';
 import { READ_RANGES } from './registers.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type { AirobotPlatformConfig, AirobotState } from './types.js';
 
-const DEFAULT_NAME = 'Airobot Ventilation';
 const MODBUS_TCP_PORT = 502;
-const MODBUS_UNIT_ID = 1;
 const MODBUS_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 30000;
 
@@ -36,7 +35,11 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
-    this.airobotConfig = this.parseConfig(config);
+    const normalized = normalizeAirobotPlatformConfig(config as Record<string, unknown>);
+    if (normalized.error) {
+      this.log.error(normalized.error);
+    }
+    this.airobotConfig = normalized.config;
 
     if (this.airobotConfig) {
       this.log.info(
@@ -165,26 +168,5 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
       `Decoded errors reg1026=${errorRegisterHigh} reg1027=${errorRegisterLow} `
       + `raw=${state.errors.raw} active=${activeFlags || 'none'}`,
     );
-  }
-
-  private parseConfig(config: PlatformConfig): AirobotPlatformConfig | undefined {
-    const ipAddress = typeof config.ipAddress === 'string' ? config.ipAddress.trim() : '';
-    if (!ipAddress) {
-      this.log.error('Missing required "ipAddress" config value for Airobot ventilation unit.');
-      return undefined;
-    }
-
-    return {
-      name: typeof config.name === 'string' && config.name.trim() ? config.name.trim() : DEFAULT_NAME,
-      ipAddress,
-      modbusUnitId: Number.isInteger(config.modbusUnitId)
-        && config.modbusUnitId >= 0
-        && config.modbusUnitId <= 255
-        ? config.modbusUnitId
-        : MODBUS_UNIT_ID,
-      modbusTrace: config.modbusTrace === true,
-      humidifier: config.humidifier === true,
-      pm25Sensor: config.pm25Sensor === true,
-    };
   }
 }
