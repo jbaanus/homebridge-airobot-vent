@@ -3,7 +3,6 @@ import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
 import { AirobotModbusClient } from '../dist/modbusClient.js';
-import { ModbusExceptionError } from '../dist/modbusErrors.js';
 
 class RecordingTransport {
   constructor(steps) {
@@ -75,19 +74,18 @@ function buildResponse({
   return buffer;
 }
 
-test('retries next profile and then reuses selected profile on next poll', async () => {
+test('uses fixed profile for each poll', async () => {
   const transport = new RecordingTransport([
-    { error: new ModbusExceptionError(2, 3) },
-    { response: buildRegisterResponse({ transactionId: 2, unitId: 1, functionCode: 3, values: [100, ...Array(19).fill(0)] }) },
-    { response: buildRegisterResponse({ transactionId: 3, unitId: 1, functionCode: 3, values: Array(10).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 4, unitId: 1, functionCode: 3, values: Array(2).fill(0) }) },
-    { response: buildCoilResponse({ transactionId: 5, unitId: 1, functionCode: 1, bits: [0] }) },
-    { response: buildRegisterResponse({ transactionId: 6, unitId: 1, functionCode: 3, values: [100, 0] }) },
-    { response: buildRegisterResponse({ transactionId: 7, unitId: 1, functionCode: 3, values: [100, ...Array(19).fill(0)] }) },
-    { response: buildRegisterResponse({ transactionId: 8, unitId: 1, functionCode: 3, values: Array(10).fill(0) }) },
-    { response: buildRegisterResponse({ transactionId: 9, unitId: 1, functionCode: 3, values: Array(2).fill(0) }) },
-    { response: buildCoilResponse({ transactionId: 10, unitId: 1, functionCode: 1, bits: [0] }) },
-    { response: buildRegisterResponse({ transactionId: 11, unitId: 1, functionCode: 3, values: [100, 0] }) },
+    { response: buildRegisterResponse({ transactionId: 1, unitId: 1, functionCode: 4, values: [100, ...Array(19).fill(0)] }) },
+    { response: buildRegisterResponse({ transactionId: 2, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 3, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
+    { response: buildCoilResponse({ transactionId: 4, unitId: 1, functionCode: 1, bits: [0] }) },
+    { response: buildRegisterResponse({ transactionId: 5, unitId: 1, functionCode: 3, values: [100, 0] }) },
+    { response: buildRegisterResponse({ transactionId: 6, unitId: 1, functionCode: 4, values: [100, ...Array(19).fill(0)] }) },
+    { response: buildRegisterResponse({ transactionId: 7, unitId: 1, functionCode: 4, values: Array(10).fill(0) }) },
+    { response: buildRegisterResponse({ transactionId: 8, unitId: 1, functionCode: 4, values: Array(2).fill(0) }) },
+    { response: buildCoilResponse({ transactionId: 9, unitId: 1, functionCode: 1, bits: [0] }) },
+    { response: buildRegisterResponse({ transactionId: 10, unitId: 1, functionCode: 3, values: [100, 0] }) },
   ]);
 
   const client = new AirobotModbusClient({
@@ -102,13 +100,15 @@ test('retries next profile and then reuses selected profile on next poll', async
   await client.readState();
   await client.readState();
 
-  const startAddressFirstAttempt = transport.requests[0].request.readUInt16BE(8);
-  const startAddressAfterRetry = transport.requests[1].request.readUInt16BE(8);
-  const startAddressNextPoll = transport.requests[6].request.readUInt16BE(8);
+  const firstStartAddress = transport.requests[0].request.readUInt16BE(8);
+  const secondPollStartAddress = transport.requests[5].request.readUInt16BE(8);
+  const firstFunctionCode = transport.requests[0].request.readUInt8(7);
+  const secondFunctionCode = transport.requests[5].request.readUInt8(7);
 
-  assert.equal(startAddressFirstAttempt, 1000);
-  assert.equal(startAddressAfterRetry, 999);
-  assert.equal(startAddressNextPoll, 999);
+  assert.equal(firstStartAddress, 1000);
+  assert.equal(secondPollStartAddress, 1000);
+  assert.equal(firstFunctionCode, 4);
+  assert.equal(secondFunctionCode, 4);
 });
 
 test('does not try next profile for non-retryable error', async () => {

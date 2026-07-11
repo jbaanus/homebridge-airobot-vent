@@ -1,4 +1,4 @@
-import type { ReadProfile } from './modbusProfileSelector.js';
+import type { ReadProfile } from './modbusReadProfile.js';
 import { isIllegalDataAddressError } from './modbusReadPolicy.js';
 import { tryParseReadResponse } from './modbusResponseDecoder.js';
 import type { ModbusTransport } from './modbusTransport.js';

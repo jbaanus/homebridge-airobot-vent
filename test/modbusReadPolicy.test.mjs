@@ -1,20 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ModbusExceptionError, UnexpectedModbusFunctionCodeError, UnexpectedModbusUnitIdError } from '../dist/modbusErrors.js';
-import { isIllegalDataAddressError, isPlausibleState, shouldTryNextProfile } from '../dist/modbusReadPolicy.js';
-
-test('shouldTryNextProfile returns true for typed retryable errors', () => {
-  assert.equal(shouldTryNextProfile(new ModbusExceptionError(1, 3)), true);
-  assert.equal(shouldTryNextProfile(new ModbusExceptionError(2, 4)), true);
-  assert.equal(shouldTryNextProfile(new UnexpectedModbusFunctionCodeError(4)), true);
-  assert.equal(shouldTryNextProfile(new UnexpectedModbusUnitIdError(255)), true);
-});
-
-test('shouldTryNextProfile returns false for non-retryable errors', () => {
-  assert.equal(shouldTryNextProfile(new Error('ECONNREFUSED')), false);
-  assert.equal(shouldTryNextProfile({ message: 'Unexpected Modbus function code 4' }), false);
-});
+import { ModbusExceptionError } from '../dist/modbusErrors.js';
+import { isIllegalDataAddressError } from '../dist/modbusReadPolicy.js';
 
 test('isIllegalDataAddressError detects exception 2', () => {
   assert.equal(isIllegalDataAddressError(new Error('Modbus exception 2 for function 4')), false);
@@ -25,37 +13,4 @@ test('isIllegalDataAddressError detects exception 2', () => {
 test('isIllegalDataAddressError detects typed exception 2', () => {
   assert.equal(isIllegalDataAddressError(new ModbusExceptionError(2, 4)), true);
   assert.equal(isIllegalDataAddressError(new ModbusExceptionError(1, 4)), false);
-});
-
-test('isPlausibleState accepts in-range values', () => {
-  const state = {
-    temperatures: { extract: 20, supply: 21, outside: -5, exhaust: 22 },
-    humidity: { extract: 40, supply: 45, outside: 50, exhaust: 55 },
-    pm25: 120,
-  };
-
-  assert.equal(isPlausibleState(state), true);
-});
-
-test('isPlausibleState rejects out-of-range values', () => {
-  const invalidTemperature = {
-    temperatures: { extract: 150, supply: 21, outside: -5, exhaust: 22 },
-    humidity: { extract: 40, supply: 45, outside: 50, exhaust: 55 },
-    pm25: 120,
-  };
-  assert.equal(isPlausibleState(invalidTemperature), false);
-
-  const invalidHumidity = {
-    temperatures: { extract: 20, supply: 21, outside: -5, exhaust: 22 },
-    humidity: { extract: 140, supply: 45, outside: 50, exhaust: 55 },
-    pm25: 120,
-  };
-  assert.equal(isPlausibleState(invalidHumidity), false);
-
-  const invalidPm = {
-    temperatures: { extract: 20, supply: 21, outside: -5, exhaust: 22 },
-    humidity: { extract: 40, supply: 45, outside: 50, exhaust: 55 },
-    pm25: 2000,
-  };
-  assert.equal(isPlausibleState(invalidPm), false);
 });

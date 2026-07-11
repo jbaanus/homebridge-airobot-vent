@@ -1,17 +1,23 @@
-import { ModbusProfileSelector } from './modbusProfileSelector.js';
-import { isPlausibleState, shouldTryNextProfile } from './modbusReadPolicy.js';
 import { ModbusReadPlanExecutor } from './modbusReadPlanExecutor.js';
+import type { ReadProfile } from './modbusReadProfile.js';
 import type { ModbusTransport } from './modbusTransport.js';
 import { ModbusTcpTransport } from './modbusTcpTransport.js';
 import type { AirobotReadOptions, AirobotState } from './types.js';
 
 export class AirobotModbusClient {
   private transactionId = 0;
-  private readonly profileSelector: ModbusProfileSelector;
   private readonly readPlanExecutor: ModbusReadPlanExecutor;
+  private readonly fixedProfile: ReadProfile;
 
   constructor(private readonly options: AirobotReadOptions, transport?: ModbusTransport) {
-    this.profileSelector = new ModbusProfileSelector(this.options.unitId);
+    this.fixedProfile = {
+      unitId: this.options.unitId,
+      variant: {
+        functionCode: 4,
+        registerAddressOffset: 0,
+      },
+    };
+
     const resolvedTransport = transport ?? new ModbusTcpTransport(message => this.logDebug(`[Transport] ${message}`));
     this.readPlanExecutor = new ModbusReadPlanExecutor(
       {
@@ -28,35 +34,11 @@ export class AirobotModbusClient {
   }
 
   async readState(): Promise<AirobotState> {
-    const profiles = this.profileSelector.buildCandidateProfiles(this.options.unitId);
-    let lastError: unknown;
-
-    for (const profile of profiles) {
-      try {
-        const state = await this.readPlanExecutor.readStateWithProfile(profile);
-        if (!isPlausibleState(state)) {
-          this.logDebug(
-            `Rejecting Modbus profile unit=${profile.unitId} `
-            + `function=${profile.variant.functionCode} offset=${profile.variant.registerAddressOffset} `
-            + 'due to implausible values',
-          );
-          continue;
-        }
-
-        this.profileSelector.markSuccessfulProfile(profile);
-        this.logDebug(
-          `Selected Modbus profile unit=${profile.unitId} function=${profile.variant.functionCode} offset=${profile.variant.registerAddressOffset}`,
-        );
-        return state;
-      } catch (error) {
-        lastError = error;
-        if (!shouldTryNextProfile(error)) {
-          throw error;
-        }
-      }
-    }
-
-    throw lastError instanceof Error ? lastError : new Error('Failed to read Airobot Modbus state with all variants');
+    this.logDebug(
+      `Using fixed Modbus profile unit=${this.fixedProfile.unitId} `
+      + `function=${this.fixedProfile.variant.functionCode} offset=${this.fixedProfile.variant.registerAddressOffset}`,
+    );
+    return this.readPlanExecutor.readStateWithProfile(this.fixedProfile);
   }
 
   private nextTransactionId(): number {
