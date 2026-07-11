@@ -1,6 +1,19 @@
+import {
+  ModbusExceptionError,
+  UnexpectedModbusFunctionCodeError,
+  UnexpectedModbusUnitIdError,
+} from './modbusErrors.js';
 import type { AirobotState } from './types.js';
 
 export function shouldTryNextProfile(error: unknown): boolean {
+  if (error instanceof ModbusExceptionError) {
+    return error.exceptionCode === 1 || error.exceptionCode === 2;
+  }
+
+  if (error instanceof UnexpectedModbusFunctionCodeError || error instanceof UnexpectedModbusUnitIdError) {
+    return true;
+  }
+
   if (!(error instanceof Error)) {
     return false;
   }
@@ -11,6 +24,10 @@ export function shouldTryNextProfile(error: unknown): boolean {
 }
 
 export function isIllegalDataAddressError(error: unknown): boolean {
+  if (error instanceof ModbusExceptionError) {
+    return error.exceptionCode === 2;
+  }
+
   return error instanceof Error && /Modbus exception\s+2\b/i.test(error.message);
 }
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { ModbusExceptionError, UnexpectedModbusFunctionCodeError, UnexpectedModbusUnitIdError } from '../dist/modbusErrors.js';
 import { isIllegalDataAddressError, isPlausibleState, shouldTryNextProfile } from '../dist/modbusReadPolicy.js';
 
 test('shouldTryNextProfile returns true for retryable Modbus errors', () => {
@@ -8,6 +9,13 @@ test('shouldTryNextProfile returns true for retryable Modbus errors', () => {
   assert.equal(shouldTryNextProfile(new Error('Modbus exception 2 for function 4')), true);
   assert.equal(shouldTryNextProfile(new Error('Unexpected Modbus function code 4')), true);
   assert.equal(shouldTryNextProfile(new Error('Unexpected Modbus unit id 255')), true);
+});
+
+test('shouldTryNextProfile returns true for typed retryable errors', () => {
+  assert.equal(shouldTryNextProfile(new ModbusExceptionError(1, 3)), true);
+  assert.equal(shouldTryNextProfile(new ModbusExceptionError(2, 4)), true);
+  assert.equal(shouldTryNextProfile(new UnexpectedModbusFunctionCodeError(4)), true);
+  assert.equal(shouldTryNextProfile(new UnexpectedModbusUnitIdError(255)), true);
 });
 
 test('shouldTryNextProfile returns false for non-retryable errors', () => {
@@ -19,6 +27,11 @@ test('isIllegalDataAddressError detects exception 2', () => {
   assert.equal(isIllegalDataAddressError(new Error('Modbus exception 2 for function 4')), true);
   assert.equal(isIllegalDataAddressError(new Error('Modbus exception 1 for function 4')), false);
   assert.equal(isIllegalDataAddressError(undefined), false);
+});
+
+test('isIllegalDataAddressError detects typed exception 2', () => {
+  assert.equal(isIllegalDataAddressError(new ModbusExceptionError(2, 4)), true);
+  assert.equal(isIllegalDataAddressError(new ModbusExceptionError(1, 4)), false);
 });
 
 test('isPlausibleState accepts in-range values', () => {

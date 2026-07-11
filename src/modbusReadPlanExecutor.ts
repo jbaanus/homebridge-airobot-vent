@@ -92,11 +92,15 @@ export class ModbusReadPlanExecutor {
       this.logDebug(`Register values tx=${transactionId} ${formatRegisterValues(startAddress, parsed)}`);
       return parsed;
     }).catch(error => {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `${message} (unit=${profile.unitId}, function=${functionCode}, `
-        + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
-      );
+      const context = `(unit=${profile.unitId}, function=${functionCode}, `
+        + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`;
+
+      if (error instanceof Error) {
+        error.message = `${error.message} ${context}`;
+        throw error;
+      }
+
+      throw new Error(`${String(error)} ${context}`);
     });
   }
 

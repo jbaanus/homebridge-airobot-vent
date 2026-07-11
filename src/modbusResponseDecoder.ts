@@ -1,5 +1,12 @@
 const MODBUS_READ_COILS = 1;
 
+import {
+  InvalidModbusTcpResponseHeaderError,
+  ModbusExceptionError,
+  UnexpectedModbusFunctionCodeError,
+  UnexpectedModbusUnitIdError,
+} from './modbusErrors.js';
+
 export interface DecodeReadResponseInput {
   response: Buffer;
   transactionId: number;
@@ -31,22 +38,22 @@ export function tryParseReadResponse(input: DecodeReadResponseInput): number[] |
   }
 
   if (responseTransactionId !== transactionId || protocolId !== 0) {
-    throw new Error('Invalid Modbus TCP response header');
+    throw new InvalidModbusTcpResponseHeaderError();
   }
 
   const responseUnitId = response.readUInt8(6);
   if (responseUnitId !== expectedUnitId) {
-    throw new Error(`Unexpected Modbus unit id ${responseUnitId}`);
+    throw new UnexpectedModbusUnitIdError(responseUnitId);
   }
 
   const functionCode = response.readUInt8(7);
   if ((functionCode & 0x80) !== 0) {
     const exceptionCode = response.readUInt8(8);
-    throw new Error(`Modbus exception ${exceptionCode} for function ${expectedFunctionCode}`);
+    throw new ModbusExceptionError(exceptionCode, expectedFunctionCode);
   }
 
   if (functionCode !== expectedFunctionCode) {
-    throw new Error(`Unexpected Modbus function code ${functionCode}`);
+    throw new UnexpectedModbusFunctionCodeError(functionCode);
   }
 
   const byteCount = response.readUInt8(8);
