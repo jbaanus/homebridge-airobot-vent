@@ -1,6 +1,6 @@
+import { ModbusFrameExchange } from './modbusFrameExchange.js';
 import type { ReadProfile } from './modbusReadProfile.js';
 import { isIllegalDataAddressError } from './modbusReadPolicy.js';
-import { tryParseReadResponse } from './modbusResponseDecoder.js';
 import type { ModbusTransport } from './modbusTransport.js';
 import { READ_RANGES, decodeAirobotState, type RegisterRange, type RegisterValues } from './registers.js';
 import type { AirobotState } from './types.js';
@@ -16,13 +16,26 @@ export interface ModbusReadPlanExecutorOptions {
 }
 
 export class ModbusReadPlanExecutor {
+  private readonly frameExchange: ModbusFrameExchange;
+
   constructor(
     private readonly options: ModbusReadPlanExecutorOptions,
-    private readonly transport: ModbusTransport,
-    private readonly nextTransactionId: () => number,
+    transport: ModbusTransport,
+    nextTransactionId: () => number,
     private readonly logDebug: (message: string) => void,
     private readonly ranges: RegisterRange[] = READ_RANGES,
-  ) {}
+  ) {
+    this.frameExchange = new ModbusFrameExchange(
+      {
+        host: this.options.host,
+        port: this.options.port,
+        timeoutMs: this.options.timeoutMs,
+      },
+      transport,
+      nextTransactionId,
+      this.logDebug,
+    );
+  }
 
   async readStateWithProfile(profile: ReadProfile): Promise<AirobotState> {
     const values: RegisterValues = new Map();
@@ -53,72 +66,22 @@ export class ModbusReadPlanExecutor {
 
   private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
     const functionCode = this.getFunctionCodeForRange(range, profile);
+    const startAddress = range.start + profile.variant.registerAddressOffset;
     this.logDebug(
       `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
       + `(unit=${profile.unitId}, function=${functionCode}, `
-      + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
+      + `start=${startAddress}, quantity=${range.quantity})`,
     );
 
-    const transactionId = this.nextTransactionId();
-    const request = this.buildReadRequest(transactionId, range, profile);
-    this.logDebug(
-      `Sending Modbus request tx=${transactionId} bytes=${request.length} hex=${toHex(request)}`,
-    );
-
-    return this.transport.send({
-      host: this.options.host,
-      port: this.options.port,
-      timeoutMs: this.options.timeoutMs,
-      request,
-    }).then(response => {
-      this.logDebug(
-        `Received Modbus response tx=${transactionId} chunkBytes=${response.length} totalBytes=${response.length} hex=${toHex(response)}`,
-      );
-
-      const parsed = tryParseReadResponse({
-        response,
-        transactionId,
-        expectedQuantity: range.quantity,
-        expectedUnitId: profile.unitId,
-        expectedFunctionCode: functionCode,
-      });
-
-      if (!parsed) {
-        throw new Error('Incomplete Modbus response frame');
-      }
-
-      const startAddress = range.start + profile.variant.registerAddressOffset;
-      this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
-      this.logDebug(`Register values tx=${transactionId} ${formatRegisterValues(startAddress, parsed)}`);
+    return this.frameExchange.readRegisters({
+      unitId: profile.unitId,
+      functionCode,
+      startAddress,
+      quantity: range.quantity,
+    }).then(parsed => {
+      this.logDebug(`Register values ${formatRegisterValues(startAddress, parsed)}`);
       return parsed;
-    }).catch(error => {
-      const context = `(unit=${profile.unitId}, function=${functionCode}, `
-        + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`;
-
-      if (error instanceof Error) {
-        error.message = `${error.message} ${context}`;
-        throw error;
-      }
-
-      throw new Error(`${String(error)} ${context}`);
     });
-  }
-
-  private buildReadRequest(transactionId: number, range: RegisterRange, profile: ReadProfile): Buffer {
-    const startAddress = range.start + profile.variant.registerAddressOffset;
-    if (startAddress < 0 || startAddress > 0xffff) {
-      throw new Error(`Invalid Modbus register start ${startAddress}`);
-    }
-
-    const buffer = Buffer.alloc(12);
-    buffer.writeUInt16BE(transactionId, 0);
-    buffer.writeUInt16BE(0, 2);
-    buffer.writeUInt16BE(6, 4);
-    buffer.writeUInt8(profile.unitId, 6);
-    buffer.writeUInt8(this.getFunctionCodeForRange(range, profile), 7);
-    buffer.writeUInt16BE(startAddress, 8);
-    buffer.writeUInt16BE(range.quantity, 10);
-    return buffer;
   }
 
   private getFunctionCodeForRange(range: RegisterRange, profile: ReadProfile): number {
@@ -137,10 +100,6 @@ export class ModbusReadPlanExecutor {
   private isHoldingRegisterAddress(address: number): boolean {
     return (address >= 2000 && address < 3000) || (address >= 4000 && address < 5000);
   }
-}
-
-function toHex(buffer: Buffer): string {
-  return Array.from(buffer, byte => byte.toString(16).padStart(2, '0')).join(' ');
 }
 
 function formatRegisterValues(startAddress: number, values: number[]): string {

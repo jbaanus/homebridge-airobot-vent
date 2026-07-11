@@ -3,6 +3,7 @@ export interface ModbusTransportRequest {
   port: number;
   timeoutMs: number;
   request: Buffer;
+  isCompleteResponse: (response: Buffer) => boolean;
 }
 
 export interface ModbusTransport {

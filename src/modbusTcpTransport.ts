@@ -2,10 +2,6 @@ import net from 'node:net';
 
 import type { ModbusTransport, ModbusTransportRequest } from './modbusTransport.js';
 
-export interface TcpTransportTraceContext {
-  transactionId: number;
-}
-
 export class ModbusTcpTransport implements ModbusTransport {
   constructor(private readonly traceLog?: (message: string) => void) {}
 
@@ -53,22 +49,12 @@ export class ModbusTcpTransport implements ModbusTransport {
         const response = Buffer.concat(chunks);
         this.traceLog?.(`Received Modbus response chunkBytes=${chunk.length} totalBytes=${response.length} hex=${toHex(response)}`);
 
-        const fullLength = tryReadFullResponseLength(response);
-        if (fullLength !== undefined && response.length >= fullLength) {
-          finish(undefined, response.subarray(0, fullLength));
+        if (requestData.isCompleteResponse(response)) {
+          finish(undefined, response);
         }
       });
     });
   }
-}
-
-function tryReadFullResponseLength(response: Buffer): number | undefined {
-  if (response.length < 6) {
-    return undefined;
-  }
-
-  const length = response.readUInt16BE(4);
-  return 6 + length;
 }
 
 function toHex(buffer: Buffer): string {
