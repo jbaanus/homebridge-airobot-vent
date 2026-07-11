@@ -1,6 +1,6 @@
-import net from 'node:net';
-
 import { tryParseReadResponse } from './modbusResponseDecoder.js';
+import type { ModbusTransport } from './modbusTransport.js';
+import { ModbusTcpTransport } from './modbusTcpTransport.js';
 import { READ_RANGES, decodeAirobotState, type RegisterRange, type RegisterValues } from './registers.js';
 import type { AirobotReadOptions, AirobotState } from './types.js';
 
@@ -20,8 +20,9 @@ interface ReadProfile {
 export class AirobotModbusClient {
   private transactionId = 0;
   private selectedProfile: ReadProfile;
+  private readonly transport: ModbusTransport;
 
-  constructor(private readonly options: AirobotReadOptions) {
+  constructor(private readonly options: AirobotReadOptions, transport?: ModbusTransport) {
     this.selectedProfile = {
       unitId: this.options.unitId,
       variant: {
@@ -29,6 +30,7 @@ export class AirobotModbusClient {
         registerAddressOffset: 0,
       },
     };
+    this.transport = transport ?? new ModbusTcpTransport(message => this.logDebug(`[Transport] ${message}`));
   }
 
   async readState(): Promise<AirobotState> {
@@ -91,82 +93,51 @@ export class AirobotModbusClient {
   }
 
   private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
-    return new Promise((resolve, reject) => {
-      const functionCode = this.getFunctionCodeForRange(range, profile);
+    const functionCode = this.getFunctionCodeForRange(range, profile);
+    this.logDebug(
+      `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
+      + `(unit=${profile.unitId}, function=${functionCode}, `
+      + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
+    );
 
+    const transactionId = this.nextTransactionId();
+    const request = this.buildReadRequest(transactionId, range, profile);
+    this.logDebug(
+      `Sending Modbus request tx=${transactionId} bytes=${request.length} hex=${toHex(request)}`,
+    );
+
+    return this.transport.send({
+      host: this.options.host,
+      port: this.options.port,
+      timeoutMs: this.options.timeoutMs,
+      request,
+    }).then(response => {
       this.logDebug(
-        `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
-        + `(unit=${profile.unitId}, function=${functionCode}, `
+        `Received Modbus response tx=${transactionId} chunkBytes=${response.length} totalBytes=${response.length} hex=${toHex(response)}`,
+      );
+
+      const parsed = tryParseReadResponse({
+        response,
+        transactionId,
+        expectedQuantity: range.quantity,
+        expectedUnitId: profile.unitId,
+        expectedFunctionCode: functionCode,
+      });
+
+      if (!parsed) {
+        throw new Error('Incomplete Modbus response frame');
+      }
+
+      const startAddress = range.start + profile.variant.registerAddressOffset;
+      this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
+      this.logDebug(`Register values tx=${transactionId} ${formatRegisterValues(startAddress, parsed)}`);
+      return parsed;
+    }).catch(error => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${message} (unit=${profile.unitId}, function=${functionCode}, `
         + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
       );
-
-      const socket = net.createConnection({
-        host: this.options.host,
-        port: this.options.port,
-      });
-      const transactionId = this.nextTransactionId();
-      const request = this.buildReadRequest(transactionId, range, profile);
-      this.logDebug(
-        `Sending Modbus request tx=${transactionId} bytes=${request.length} hex=${toHex(request)}`,
-      );
-      const chunks: Buffer[] = [];
-      let settled = false;
-
-      const finish = (error?: Error, values?: number[]) => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        socket.destroy();
-
-        if (error) {
-          reject(error);
-        } else {
-          resolve(values ?? []);
-        }
-      };
-
-      socket.setTimeout(this.options.timeoutMs);
-      socket.once('connect', () => {
-        this.logDebug(`Connected to ${this.options.host}:${this.options.port} tx=${transactionId}`);
-        socket.write(request);
-      });
-      socket.once('timeout', () => finish(new Error(`Modbus request to ${this.options.host} timed out`)));
-      socket.once('error', error => finish(error));
-      socket.on('data', chunk => {
-        if (!Buffer.isBuffer(chunk)) {
-          finish(new Error('Unexpected string data from Modbus socket'));
-          return;
-        }
-
-        chunks.push(chunk);
-        const response = Buffer.concat(chunks);
-        this.logDebug(
-          `Received Modbus response tx=${transactionId} chunkBytes=${chunk.length} totalBytes=${response.length} hex=${toHex(response)}`,
-        );
-        try {
-          const parsed = tryParseReadResponse({
-            response,
-            transactionId,
-            expectedQuantity: range.quantity,
-            expectedUnitId: profile.unitId,
-            expectedFunctionCode: functionCode,
-          });
-          if (parsed) {
-            const startAddress = range.start + profile.variant.registerAddressOffset;
-            this.logDebug(`Parsed Modbus response tx=${transactionId} registers=${parsed.length}`);
-            this.logDebug(`Register values tx=${transactionId} ${formatRegisterValues(startAddress, parsed)}`);
-            finish(undefined, parsed);
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          finish(new Error(
-            `${message} (unit=${profile.unitId}, function=${functionCode}, `
-            + `start=${range.start + profile.variant.registerAddressOffset}, quantity=${range.quantity})`,
-          ));
-        }
-      });
     });
   }
 
