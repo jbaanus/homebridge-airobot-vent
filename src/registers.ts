@@ -1,21 +1,8 @@
+import { generateReadRanges } from './registerCatalog.js';
+export type { RegisterRange } from './registerCatalog.js';
 import type { AirobotErrors, AirobotState } from './types.js';
 
-export interface RegisterRange {
-  start: number;
-  quantity: number;
-  optional?: boolean;
-  functionCode?: number;
-}
-
-export const READ_RANGES: RegisterRange[] = [
-  { start: 1000, quantity: 20 },
-  { start: 1026, quantity: 10 },
-  { start: 1051, quantity: 2 },
-  // Filter status register requested via FC01 (coils) on this device variant.
-  { start: 4020, quantity: 1, optional: true, functionCode: 1 },
-  // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
-  { start: 2017, quantity: 2, optional: true, functionCode: 3 },
-];
+export const READ_RANGES = generateReadRanges();
 
 export type RegisterValues = Map<number, number>;
 
