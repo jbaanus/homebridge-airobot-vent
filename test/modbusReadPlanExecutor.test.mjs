@@ -132,15 +132,20 @@ test('uses holding-register function code for 2xxx address even when profile var
 
 test('uses injected read-range policy function-code decision', async () => {
   const readRangePolicy = {
-    decide() {
+    createExecutionIntent({ range, profile }) {
       return {
-        functionCodeDecision: {
+        request: {
+          unitId: profile.unitId,
           functionCode: 4,
-          reason: 'profile-function-code',
+          startAddress: range.start + profile.variant.registerAddressOffset,
+          quantity: range.quantity,
         },
-        errorDecision: {
-          action: 'rethrow',
-          reason: 'rethrow',
+        requestReason: 'profile-function-code',
+        decideError() {
+          return {
+            action: 'rethrow',
+            reason: 'rethrow',
+          };
         },
       };
     },
@@ -177,21 +182,26 @@ test('uses injected read-range policy function-code decision', async () => {
 
 test('uses injected read-range policy error decision', async () => {
   const readRangePolicy = {
-    decide({ error }) {
+    createExecutionIntent({ range, profile }) {
       return {
-        functionCodeDecision: {
+        request: {
+          unitId: profile.unitId,
           functionCode: 1,
-          reason: 'explicit-range-function-code',
+          startAddress: range.start + profile.variant.registerAddressOffset,
+          quantity: range.quantity,
         },
-        errorDecision: error
-          ? {
-            action: 'skipOptionalRange',
-            reason: 'optional-illegal-data-address',
-          }
-          : {
-            action: 'rethrow',
-            reason: 'rethrow',
-          },
+        requestReason: 'explicit-range-function-code',
+        decideError(error) {
+          return error
+            ? {
+              action: 'skipOptionalRange',
+              reason: 'optional-illegal-data-address',
+            }
+            : {
+              action: 'rethrow',
+              reason: 'rethrow',
+            };
+        },
       };
     },
   };

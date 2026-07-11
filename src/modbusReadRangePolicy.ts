@@ -13,40 +13,49 @@ export type ErrorDecisionReason =
   | 'optional-illegal-data-address'
   | 'rethrow';
 
-export interface FunctionCodeDecision {
-  functionCode: number;
-  reason: FunctionCodeDecisionReason;
-}
-
 export interface ErrorDecision {
   action: 'skipOptionalRange' | 'rethrow';
   reason: ErrorDecisionReason;
 }
 
-export interface ReadRangePolicyDecision {
-  functionCodeDecision: FunctionCodeDecision;
-  errorDecision: ErrorDecision;
-}
-
-export interface ReadRangePolicyInput {
+export interface ReadRangePolicyIntentInput {
   range: RegisterRange;
   profile: ReadProfile;
-  error?: unknown;
+}
+
+export interface ReadRangeExecutionIntent {
+  request: {
+    unitId: number;
+    functionCode: number;
+    startAddress: number;
+    quantity: number;
+  };
+  requestReason: FunctionCodeDecisionReason;
+  decideError(error: unknown): ErrorDecision;
 }
 
 export interface ReadRangePolicy {
-  decide(input: ReadRangePolicyInput): ReadRangePolicyDecision;
+  createExecutionIntent(input: ReadRangePolicyIntentInput): ReadRangeExecutionIntent;
 }
 
 export class DefaultReadRangePolicy implements ReadRangePolicy {
-  decide(input: ReadRangePolicyInput): ReadRangePolicyDecision {
+  createExecutionIntent(input: ReadRangePolicyIntentInput): ReadRangeExecutionIntent {
+    const functionCodeDecision = this.decideFunctionCode(input.range, input.profile);
+    const startAddress = input.range.start + input.profile.variant.registerAddressOffset;
+
     return {
-      functionCodeDecision: this.decideFunctionCode(input.range, input.profile),
-      errorDecision: this.decideError(input.range, input.error),
+      request: {
+        unitId: input.profile.unitId,
+        functionCode: functionCodeDecision.functionCode,
+        startAddress,
+        quantity: input.range.quantity,
+      },
+      requestReason: functionCodeDecision.reason,
+      decideError: error => this.decideError(input.range, error),
     };
   }
 
-  private decideFunctionCode(range: RegisterRange, profile: ReadProfile): FunctionCodeDecision {
+  private decideFunctionCode(range: RegisterRange, profile: ReadProfile): { functionCode: number; reason: FunctionCodeDecisionReason } {
     if (typeof range.functionCode === 'number') {
       return {
         functionCode: range.functionCode,

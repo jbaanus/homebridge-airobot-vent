@@ -41,12 +41,13 @@ export class ModbusReadPlanExecutor {
     const values: RegisterValues = new Map();
 
     for (const range of this.ranges) {
+      const executionIntent = this.readRangePolicy.createExecutionIntent({ range, profile });
       try {
-        const registers = await this.readRegisters(range, profile);
+        const registers = await this.readRegisters(executionIntent);
         registers.forEach((value, index) => values.set(range.start + index, value));
       } catch (error) {
-        const policyDecision = this.readRangePolicy.decide({ range, profile, error });
-        if (policyDecision.errorDecision.action === 'skipOptionalRange') {
+        const errorDecision = executionIntent.decideError(error);
+        if (errorDecision.action === 'skipOptionalRange') {
           this.logDebug(
             `Skipping optional range start=${range.start} quantity=${range.quantity} `
             + `for unit=${profile.unitId} function=${profile.variant.functionCode} `
@@ -65,21 +66,19 @@ export class ModbusReadPlanExecutor {
     });
   }
 
-  private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
-    const policyDecision = this.readRangePolicy.decide({ range, profile });
-    const functionCode = policyDecision.functionCodeDecision.functionCode;
-    const startAddress = range.start + profile.variant.registerAddressOffset;
+  private readRegisters(executionIntent: ReturnType<ReadRangePolicy['createExecutionIntent']>): Promise<number[]> {
+    const { unitId, functionCode, startAddress, quantity } = executionIntent.request;
     this.logDebug(
       `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
-      + `(unit=${profile.unitId}, function=${functionCode}, `
-      + `start=${startAddress}, quantity=${range.quantity})`,
+      + `(unit=${unitId}, function=${functionCode}, `
+      + `start=${startAddress}, quantity=${quantity})`,
     );
 
     return this.transaction.readRegisters({
-      unitId: profile.unitId,
+      unitId,
       functionCode,
       startAddress,
-      quantity: range.quantity,
+      quantity,
     }).then(parsed => {
       this.logDebug(`Register values ${formatRegisterValues(startAddress, parsed)}`);
       return parsed;
