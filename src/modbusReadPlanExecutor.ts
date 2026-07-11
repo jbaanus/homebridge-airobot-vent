@@ -1,11 +1,9 @@
 import { ModbusFrameExchange } from './modbusFrameExchange.js';
 import type { ReadProfile } from './modbusReadProfile.js';
-import { isIllegalDataAddressError } from './modbusReadPolicy.js';
+import { DefaultReadRangePolicy, type ReadRangePolicy } from './modbusReadRangePolicy.js';
 import type { ModbusTransport } from './modbusTransport.js';
 import { READ_RANGES, decodeAirobotState, type RegisterRange, type RegisterValues } from './registers.js';
 import type { AirobotState } from './types.js';
-
-const MODBUS_READ_HOLDING_REGISTERS = 3;
 
 export interface ModbusReadPlanExecutorOptions {
   host: string;
@@ -24,6 +22,7 @@ export class ModbusReadPlanExecutor {
     nextTransactionId: () => number,
     private readonly logDebug: (message: string) => void,
     private readonly ranges: RegisterRange[] = READ_RANGES,
+    private readonly readRangePolicy: ReadRangePolicy = new DefaultReadRangePolicy(),
   ) {
     this.frameExchange = new ModbusFrameExchange(
       {
@@ -45,7 +44,8 @@ export class ModbusReadPlanExecutor {
         const registers = await this.readRegisters(range, profile);
         registers.forEach((value, index) => values.set(range.start + index, value));
       } catch (error) {
-        if (range.optional && isIllegalDataAddressError(error)) {
+        const policyDecision = this.readRangePolicy.decide({ range, profile, error });
+        if (policyDecision.errorDecision.action === 'skipOptionalRange') {
           this.logDebug(
             `Skipping optional range start=${range.start} quantity=${range.quantity} `
             + `for unit=${profile.unitId} function=${profile.variant.functionCode} `
@@ -65,7 +65,8 @@ export class ModbusReadPlanExecutor {
   }
 
   private readRegisters(range: RegisterRange, profile: ReadProfile): Promise<number[]> {
-    const functionCode = this.getFunctionCodeForRange(range, profile);
+    const policyDecision = this.readRangePolicy.decide({ range, profile });
+    const functionCode = policyDecision.functionCodeDecision.functionCode;
     const startAddress = range.start + profile.variant.registerAddressOffset;
     this.logDebug(
       `Opening Modbus TCP connection to ${this.options.host}:${this.options.port} `
@@ -82,23 +83,6 @@ export class ModbusReadPlanExecutor {
       this.logDebug(`Register values ${formatRegisterValues(startAddress, parsed)}`);
       return parsed;
     });
-  }
-
-  private getFunctionCodeForRange(range: RegisterRange, profile: ReadProfile): number {
-    if (typeof range.functionCode === 'number') {
-      return range.functionCode;
-    }
-
-    const startAddress = range.start + profile.variant.registerAddressOffset;
-    if (this.isHoldingRegisterAddress(startAddress)) {
-      return MODBUS_READ_HOLDING_REGISTERS;
-    }
-
-    return profile.variant.functionCode;
-  }
-
-  private isHoldingRegisterAddress(address: number): boolean {
-    return (address >= 2000 && address < 3000) || (address >= 4000 && address < 5000);
   }
 }
 

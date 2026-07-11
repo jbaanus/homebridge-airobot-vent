@@ -24,7 +24,7 @@ function buildResponse({
   return buffer;
 }
 
-function createExecutor({ steps, ranges }) {
+function createExecutor({ steps, ranges, readRangePolicy }) {
   let tx = 0;
   return new ModbusReadPlanExecutor(
     {
@@ -41,6 +41,7 @@ function createExecutor({ steps, ranges }) {
     },
     () => {},
     ranges,
+    readRangePolicy,
   );
 }
 
@@ -127,4 +128,102 @@ test('uses holding-register function code for 2xxx address even when profile var
   });
 
   assert.equal(state.filterReminderIntervalHours, 100);
+});
+
+test('uses injected read-range policy function-code decision', async () => {
+  const readRangePolicy = {
+    decide() {
+      return {
+        functionCodeDecision: {
+          functionCode: 4,
+          reason: 'profile-function-code',
+        },
+        errorDecision: {
+          action: 'rethrow',
+          reason: 'rethrow',
+        },
+      };
+    },
+  };
+
+  const executor = createExecutor({
+    ranges: [
+      { start: 2017, quantity: 1 },
+    ],
+    steps: [
+      {
+        match: request => request.request.readUInt8(7) === 4 && request.request.readUInt16BE(8) === 2017,
+        response: buildResponse({
+          transactionId: 1,
+          unitId: 1,
+          functionCode: 4,
+          payload: Buffer.from([0x00, 0x64]),
+        }),
+      },
+    ],
+    readRangePolicy,
+  });
+
+  const state = await executor.readStateWithProfile({
+    unitId: 1,
+    variant: {
+      functionCode: 4,
+      registerAddressOffset: 0,
+    },
+  });
+
+  assert.equal(state.filterReminderIntervalHours, 100);
+});
+
+test('uses injected read-range policy error decision', async () => {
+  const readRangePolicy = {
+    decide({ error }) {
+      return {
+        functionCodeDecision: {
+          functionCode: 1,
+          reason: 'explicit-range-function-code',
+        },
+        errorDecision: error
+          ? {
+            action: 'skipOptionalRange',
+            reason: 'optional-illegal-data-address',
+          }
+          : {
+            action: 'rethrow',
+            reason: 'rethrow',
+          },
+      };
+    },
+  };
+
+  const executor = createExecutor({
+    ranges: [
+      { start: 4020, quantity: 1, optional: false },
+      { start: 1000, quantity: 1, functionCode: 3 },
+    ],
+    steps: [
+      {
+        error: new ModbusExceptionError(1, 1),
+      },
+      {
+        response: buildResponse({
+          transactionId: 2,
+          unitId: 1,
+          functionCode: 1,
+          payload: Buffer.from([0x01]),
+        }),
+      },
+    ],
+    readRangePolicy,
+  });
+
+  const state = await executor.readStateWithProfile({
+    unitId: 1,
+    variant: {
+      functionCode: 4,
+      registerAddressOffset: 0,
+    },
+  });
+
+  assert.equal(state.firmwareVersion, '0.01');
 });
