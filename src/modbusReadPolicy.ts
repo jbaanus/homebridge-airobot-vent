@@ -14,13 +14,7 @@ export function shouldTryNextProfile(error: unknown): boolean {
     return true;
   }
 
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return /Modbus exception\s+[12]\b/i.test(error.message)
-    || /Unexpected Modbus function code/i.test(error.message)
-    || /Unexpected Modbus unit id/i.test(error.message);
+  return false;
 }
 
 export function isIllegalDataAddressError(error: unknown): boolean {
@@ -28,7 +22,7 @@ export function isIllegalDataAddressError(error: unknown): boolean {
     return error.exceptionCode === 2;
   }
 
-  return error instanceof Error && /Modbus exception\s+2\b/i.test(error.message);
+  return false;
 }
 
 export function isPlausibleState(state: AirobotState): boolean {

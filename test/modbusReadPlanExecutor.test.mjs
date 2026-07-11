@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
+import { ModbusExceptionError } from '../dist/modbusErrors.js';
 import { ModbusReadPlanExecutor } from '../dist/modbusReadPlanExecutor.js';
 import { ModbusScriptedTransport } from '../dist/modbusScriptedTransport.js';
 
@@ -51,7 +52,7 @@ test('skips optional illegal-data-address range and continues decoding', async (
     ],
     steps: [
       {
-        error: new Error('Modbus exception 2 for function 1'),
+        error: new ModbusExceptionError(2, 1),
       },
       {
         response: buildResponse({
@@ -82,7 +83,7 @@ test('throws on illegal-data-address for non-optional range', async () => {
     ],
     steps: [
       {
-        error: new Error('Modbus exception 2 for function 1'),
+        error: new ModbusExceptionError(2, 1),
       },
     ],
   });

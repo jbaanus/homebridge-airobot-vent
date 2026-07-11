@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
 import { AirobotModbusClient } from '../dist/modbusClient.js';
+import { ModbusExceptionError } from '../dist/modbusErrors.js';
 
 class RecordingTransport {
   constructor(steps) {
@@ -76,7 +77,7 @@ function buildResponse({
 
 test('retries next profile and then reuses selected profile on next poll', async () => {
   const transport = new RecordingTransport([
-    { error: new Error('Modbus exception 2 for function 3') },
+    { error: new ModbusExceptionError(2, 3) },
     { response: buildRegisterResponse({ transactionId: 2, unitId: 1, functionCode: 3, values: [100, ...Array(19).fill(0)] }) },
     { response: buildRegisterResponse({ transactionId: 3, unitId: 1, functionCode: 3, values: Array(10).fill(0) }) },
     { response: buildRegisterResponse({ transactionId: 4, unitId: 1, functionCode: 3, values: Array(2).fill(0) }) },
