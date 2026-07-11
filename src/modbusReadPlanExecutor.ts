@@ -2,7 +2,8 @@ import { ModbusFrameExchange } from './modbusFrameExchange.js';
 import type { ReadProfile } from './modbusReadProfile.js';
 import { DefaultReadRangePolicy, type ReadRangePolicy } from './modbusReadRangePolicy.js';
 import type { ModbusTransport } from './modbusTransport.js';
-import { READ_RANGES, decodeAirobotState, type RegisterRange, type RegisterValues } from './registers.js';
+import { READ_RANGES, type RegisterRange } from './registerCatalog.js';
+import { decodeAirobotStateFromSchema, type RegisterValues } from './registerSchema.js';
 import type { AirobotState } from './types.js';
 
 export interface ModbusReadPlanExecutorOptions {
@@ -58,7 +59,7 @@ export class ModbusReadPlanExecutor {
       }
     }
 
-    return decodeAirobotState(values, {
+    return decodeAirobotStateFromSchema(values, {
       humidifier: this.options.humidifier,
       pm25Sensor: this.options.pm25Sensor,
     });

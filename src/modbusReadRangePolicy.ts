@@ -1,6 +1,6 @@
 import { ModbusExceptionError } from './modbusErrors.js';
 import type { ReadProfile } from './modbusReadProfile.js';
-import type { RegisterRange } from './registers.js';
+import type { RegisterRange } from './registerCatalog.js';
 
 const MODBUS_READ_HOLDING_REGISTERS = 3;
 

@@ -23,6 +23,8 @@ export const REGISTER_CATALOG: RegisterCatalogEntry[] = REGISTER_SCHEMA.map(entr
   ...(typeof entry.functionCode === 'number' ? { functionCode: entry.functionCode } : {}),
 }));
 
+export const READ_RANGES = generateReadRanges();
+
 export function generateReadRanges(catalog: RegisterCatalogEntry[] = REGISTER_CATALOG): RegisterRange[] {
   const expanded = catalog.flatMap(entry => toRangeParts(entry));
   if (expanded.length === 0) {

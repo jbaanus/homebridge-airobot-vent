@@ -1,4 +1,3 @@
-import { fanLevelToPercentage, hasFault } from './registers.js';
 import type { AirobotState } from './types.js';
 
 export interface HomeKitProjection {
@@ -86,4 +85,22 @@ export function projectHomeKitState(state: AirobotState | undefined, communicati
       statusFault,
     },
   };
+}
+
+function fanLevelToPercentage(supplyFanLevel?: number, extractFanLevel?: number): number | undefined {
+  const levels = [supplyFanLevel, extractFanLevel].filter((level): level is number => typeof level === 'number');
+  if (levels.length === 0) {
+    return undefined;
+  }
+
+  const averageLevel = levels.reduce((sum, level) => sum + level, 0) / levels.length;
+  return clamp(Math.round(averageLevel * 10), 0, 100);
+}
+
+function hasFault(errors?: AirobotState['errors']): boolean {
+  return Boolean(errors && errors.raw !== 0);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

@@ -3,7 +3,7 @@ import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAcces
 import { AirobotModbusClient } from './modbusClient.js';
 import { normalizeAirobotPlatformConfig } from './platformConfigNormalizer.js';
 import { AirobotPlatformAccessory } from './platformAccessory.js';
-import { READ_RANGES } from './registers.js';
+import { READ_RANGES } from './registerCatalog.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type { AirobotPlatformConfig, AirobotState } from './types.js';
 
