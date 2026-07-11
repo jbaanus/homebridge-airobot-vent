@@ -1,6 +1,6 @@
-import { ModbusFrameExchange } from './modbusFrameExchange.js';
 import type { ReadProfile } from './modbusReadProfile.js';
 import { DefaultReadRangePolicy, type ReadRangePolicy } from './modbusReadRangePolicy.js';
+import { ModbusTransaction } from './modbusTransaction.js';
 import type { ModbusTransport } from './modbusTransport.js';
 import { READ_RANGES, type RegisterRange } from './registerCatalog.js';
 import { decodeAirobotStateFromSchema, type RegisterValues } from './registerSchema.js';
@@ -15,7 +15,7 @@ export interface ModbusReadPlanExecutorOptions {
 }
 
 export class ModbusReadPlanExecutor {
-  private readonly frameExchange: ModbusFrameExchange;
+  private readonly transaction: ModbusTransaction;
 
   constructor(
     private readonly options: ModbusReadPlanExecutorOptions,
@@ -25,7 +25,7 @@ export class ModbusReadPlanExecutor {
     private readonly ranges: RegisterRange[] = READ_RANGES,
     private readonly readRangePolicy: ReadRangePolicy = new DefaultReadRangePolicy(),
   ) {
-    this.frameExchange = new ModbusFrameExchange(
+    this.transaction = new ModbusTransaction(
       {
         host: this.options.host,
         port: this.options.port,
@@ -75,7 +75,7 @@ export class ModbusReadPlanExecutor {
       + `start=${startAddress}, quantity=${range.quantity})`,
     );
 
-    return this.frameExchange.readRegisters({
+    return this.transaction.readRegisters({
       unitId: profile.unitId,
       functionCode,
       startAddress,

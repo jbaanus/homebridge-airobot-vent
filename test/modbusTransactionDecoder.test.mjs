@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
-import { tryParseReadResponse } from '../dist/modbusResponseDecoder.js';
+import { tryParseReadResponse } from '../dist/modbusTransaction.js';
 
 function buildResponse({
   transactionId,

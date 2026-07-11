@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
-import { ModbusFrameExchange } from '../dist/modbusFrameExchange.js';
+import { ModbusTransaction } from '../dist/modbusTransaction.js';
 
 class RecordingTransport {
   constructor(response) {
@@ -47,7 +47,7 @@ test('builds frame from typed request and decodes register values', async () => 
     }),
   );
 
-  const exchange = new ModbusFrameExchange(
+  const exchange = new ModbusTransaction(
     {
       host: '127.0.0.1',
       port: 502,
@@ -92,7 +92,7 @@ test('adds typed request context to downstream errors', async () => {
     },
   };
 
-  const exchange = new ModbusFrameExchange(
+  const exchange = new ModbusTransaction(
     {
       host: '127.0.0.1',
       port: 502,

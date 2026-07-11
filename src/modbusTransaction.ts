@@ -1,28 +1,43 @@
-import { tryParseReadResponse } from './modbusResponseDecoder.js';
+import {
+  InvalidModbusTcpResponseHeaderError,
+  ModbusExceptionError,
+  UnexpectedModbusFunctionCodeError,
+  UnexpectedModbusUnitIdError,
+} from './modbusErrors.js';
 import type { ModbusTransport } from './modbusTransport.js';
 
-export interface ModbusFrameExchangeOptions {
+const MODBUS_READ_COILS = 1;
+
+export interface ModbusTransactionOptions {
   host: string;
   port: number;
   timeoutMs: number;
 }
 
-export interface ModbusReadFrameRequest {
+export interface ModbusReadTransactionRequest {
   unitId: number;
   functionCode: number;
   startAddress: number;
   quantity: number;
 }
 
-export class ModbusFrameExchange {
+export interface DecodeReadResponseInput {
+  response: Buffer;
+  transactionId: number;
+  expectedQuantity: number;
+  expectedUnitId: number;
+  expectedFunctionCode: number;
+}
+
+export class ModbusTransaction {
   constructor(
-    private readonly options: ModbusFrameExchangeOptions,
+    private readonly options: ModbusTransactionOptions,
     private readonly transport: ModbusTransport,
     private readonly nextTransactionId: () => number,
     private readonly logDebug: (message: string) => void,
   ) {}
 
-  readRegisters(request: ModbusReadFrameRequest): Promise<number[]> {
+  readRegisters(request: ModbusReadTransactionRequest): Promise<number[]> {
     if (request.startAddress < 0 || request.startAddress > 0xffff) {
       return Promise.reject(new Error(`Invalid Modbus register start ${request.startAddress}`));
     }
@@ -69,7 +84,7 @@ export class ModbusFrameExchange {
     });
   }
 
-  private buildReadRequestFrame(transactionId: number, request: ModbusReadFrameRequest): Buffer {
+  private buildReadRequestFrame(transactionId: number, request: ModbusReadTransactionRequest): Buffer {
     const frame = Buffer.alloc(12);
     frame.writeUInt16BE(transactionId, 0);
     frame.writeUInt16BE(0, 2);
@@ -89,6 +104,76 @@ export class ModbusFrameExchange {
     const length = response.readUInt16BE(4);
     return response.length >= (6 + length);
   }
+}
+
+export function tryParseReadResponse(input: DecodeReadResponseInput): number[] | undefined {
+  const {
+    response,
+    transactionId,
+    expectedQuantity,
+    expectedUnitId,
+    expectedFunctionCode,
+  } = input;
+
+  if (response.length < 9) {
+    return undefined;
+  }
+
+  const responseTransactionId = response.readUInt16BE(0);
+  const protocolId = response.readUInt16BE(2);
+  const length = response.readUInt16BE(4);
+  const fullLength = 6 + length;
+
+  if (response.length < fullLength) {
+    return undefined;
+  }
+
+  if (responseTransactionId !== transactionId || protocolId !== 0) {
+    throw new InvalidModbusTcpResponseHeaderError();
+  }
+
+  const responseUnitId = response.readUInt8(6);
+  if (responseUnitId !== expectedUnitId) {
+    throw new UnexpectedModbusUnitIdError(responseUnitId);
+  }
+
+  const functionCode = response.readUInt8(7);
+  if ((functionCode & 0x80) !== 0) {
+    const exceptionCode = response.readUInt8(8);
+    throw new ModbusExceptionError(exceptionCode, expectedFunctionCode);
+  }
+
+  if (functionCode !== expectedFunctionCode) {
+    throw new UnexpectedModbusFunctionCodeError(functionCode);
+  }
+
+  const byteCount = response.readUInt8(8);
+  const values: number[] = [];
+
+  if (functionCode === MODBUS_READ_COILS) {
+    const expectedByteCount = Math.ceil(expectedQuantity / 8);
+    if (byteCount !== expectedByteCount) {
+      throw new Error(`Unexpected Modbus byte count ${byteCount}`);
+    }
+
+    for (let index = 0; index < expectedQuantity; index += 1) {
+      const byteIndex = 9 + Math.floor(index / 8);
+      const bitIndex = index % 8;
+      values.push((response[byteIndex] >> bitIndex) & 0x01);
+    }
+
+    return values;
+  }
+
+  if (byteCount !== expectedQuantity * 2) {
+    throw new Error(`Unexpected Modbus byte count ${byteCount}`);
+  }
+
+  for (let offset = 9; offset < 9 + byteCount; offset += 2) {
+    values.push(response.readUInt16BE(offset));
+  }
+
+  return values;
 }
 
 function toHex(buffer: Buffer): string {
