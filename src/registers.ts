@@ -11,8 +11,8 @@ export const READ_RANGES: RegisterRange[] = [
   { start: 1000, quantity: 20 },
   { start: 1026, quantity: 10 },
   { start: 1051, quantity: 2 },
-  // Filter status register requested via FC04 on this device variant.
-  { start: 4020, quantity: 1, optional: true, functionCode: 4 },
+  // Filter status register requested via FC01 (coils) on this device variant.
+  { start: 4020, quantity: 1, optional: true, functionCode: 1 },
   // 2xxx configuration addresses live in Holding Registers (FC03), not Input Registers (FC04).
   { start: 2017, quantity: 2, optional: true, functionCode: 3 },
 ];

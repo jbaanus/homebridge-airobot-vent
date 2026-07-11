@@ -5,6 +5,7 @@ import type { AirobotReadOptions, AirobotState } from './types.js';
 
 const MODBUS_READ_HOLDING_REGISTERS = 3;
 const MODBUS_READ_INPUT_REGISTERS = 4;
+const MODBUS_READ_COILS = 1;
 
 interface ReadVariant {
   functionCode: number;
@@ -317,11 +318,27 @@ export class AirobotModbusClient {
     }
 
     const byteCount = response.readUInt8(8);
+    const values: number[] = [];
+
+    if (functionCode === MODBUS_READ_COILS) {
+      const expectedByteCount = Math.ceil(expectedQuantity / 8);
+      if (byteCount !== expectedByteCount) {
+        throw new Error(`Unexpected Modbus byte count ${byteCount}`);
+      }
+
+      for (let index = 0; index < expectedQuantity; index += 1) {
+        const byteIndex = 9 + Math.floor(index / 8);
+        const bitIndex = index % 8;
+        values.push((response[byteIndex] >> bitIndex) & 0x01);
+      }
+
+      return values;
+    }
+
     if (byteCount !== expectedQuantity * 2) {
       throw new Error(`Unexpected Modbus byte count ${byteCount}`);
     }
 
-    const values: number[] = [];
     for (let offset = 9; offset < 9 + byteCount; offset += 2) {
       values.push(response.readUInt16BE(offset));
     }
