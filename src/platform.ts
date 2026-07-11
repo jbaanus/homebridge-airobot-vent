@@ -2,7 +2,8 @@ import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAcces
 
 import { AirobotModbusClient } from './modbusClient.js';
 import { AirobotPlatformAccessory } from './platformAccessory.js';
-import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+import { READ_RANGES } from './registers.js';
+import { BUILD_COUNTER, PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type { AirobotPlatformConfig, AirobotState } from './types.js';
 
 const DEFAULT_NAME = 'Airobot Ventilation';
@@ -10,6 +11,12 @@ const MODBUS_TCP_PORT = 502;
 const MODBUS_UNIT_ID = 1;
 const MODBUS_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 30000;
+
+function describeReadRanges(): string {
+  return READ_RANGES
+    .map(range => `${range.start}:${range.quantity}:fc${range.functionCode ?? 'auto'}`)
+    .join(', ');
+}
 
 export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
@@ -31,6 +38,8 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
     this.Characteristic = api.hap.Characteristic;
     this.airobotConfig = this.parseConfig(config);
 
+    this.log.info(`Plugin build counter: ${BUILD_COUNTER}`);
+
     if (this.airobotConfig) {
       this.log.info(
         `Configured Airobot target ip=${this.airobotConfig.ipAddress} unit=${this.airobotConfig.modbusUnitId} `
@@ -38,6 +47,7 @@ export class AirobotVentilationPlatform implements DynamicPlatformPlugin {
         + `humidifier=${this.airobotConfig.humidifier ? 'on' : 'off'} `
         + `pm25Sensor=${this.airobotConfig.pm25Sensor ? 'on' : 'off'}`,
       );
+      this.log.info(`Register read plan: ${describeReadRanges()}`);
 
       if (this.airobotConfig.modbusTrace) {
         this.log.warn('Modbus trace logging is enabled; this will generate frequent log entries.');
