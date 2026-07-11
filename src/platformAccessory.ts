@@ -29,7 +29,7 @@ export class AirobotPlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Airobot')
       .setCharacteristic(this.platform.Characteristic.Model, 'Ventilation Unit')
       .setCharacteristic(this.platform.Characteristic.Name, displayName)
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.device.ipAddress);
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.projection.accessoryInformation.serialNumber);
 
     this.fanService = this.accessory.getService(this.platform.Service.Fanv2)
       ?? this.accessory.addService(this.platform.Service.Fanv2, displayName);
@@ -97,6 +97,11 @@ export class AirobotPlatformAccessory {
       accessoryInfoService,
       this.platform.Characteristic.FirmwareRevision,
       this.projection.accessoryInformation.firmwareRevision,
+    );
+    this.updateCharacteristicWithLog(
+      accessoryInfoService,
+      this.platform.Characteristic.SerialNumber,
+      this.projection.accessoryInformation.serialNumber,
     );
 
     this.updateCharacteristicWithLog(this.fanService, this.platform.Characteristic.Active, this.getFanActive());

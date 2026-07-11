@@ -19,6 +19,8 @@ test('decodes core fields from schema addresses', () => {
     [1008, 550],
     [1009, 600],
     [1011, 700],
+    [1012, 0x534e],
+    [1013, 0x3031],
     [1014, 4],
     [1015, 3],
     [1016, 1838],
@@ -39,6 +41,7 @@ test('decodes core fields from schema addresses', () => {
     [4020, 1],
   ]), { humidifier: false, pm25Sensor: true });
 
+  assert.equal(state.serialNumber, 'SN01');
   assert.equal(state.firmwareVersion, '5.43');
   assert.equal(state.temperatures.extract, 25);
   assert.equal(state.temperatures.outside, -10);
@@ -79,12 +82,15 @@ test('treats sentinel values as unavailable', () => {
   const state = decodeAirobotStateFromSchema(values([
     [1005, 0x7fff],
     [1010, 0xffff],
+    [1012, 0xffff],
+    [1013, 0xffff],
     [1018, 0xffff],
     [1019, 0xffff],
     [1031, 0xffff],
     [1032, 0xffff],
   ]), { humidifier: true, pm25Sensor: true });
 
+  assert.equal(state.serialNumber, undefined);
   assert.equal(state.temperatures.extra, undefined);
   assert.equal(state.humidity.extra, undefined);
   assert.equal(state.workingTimeMs, undefined);

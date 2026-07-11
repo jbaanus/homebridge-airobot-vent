@@ -8,6 +8,7 @@ export interface AirobotPlatformConfig {
 }
 
 export interface AirobotState {
+  serialNumber?: string;
   firmwareVersion?: string;
   temperatures: {
     extract?: number;

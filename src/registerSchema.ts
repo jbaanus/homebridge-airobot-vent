@@ -29,8 +29,7 @@ export const REGISTER_SCHEMA: RegisterSchemaEntry[] = [
   { key: 'humidityExhaust', start: 1009 },
   { key: 'humidityExtra', start: 1010 },
   { key: 'co2', start: 1011 },
-  { key: 'reserved1012', start: 1012 },
-  { key: 'reserved1013', start: 1013 },
+  { key: 'serialNumber', start: 1012, quantity: 2 },
   { key: 'supplyFanLevel', start: 1014 },
   { key: 'extractFanLevel', start: 1015 },
   { key: 'supplyFanRpm', start: 1016 },
@@ -50,6 +49,7 @@ export const REGISTER_SCHEMA: RegisterSchemaEntry[] = [
 const addressByKey = new Map(REGISTER_SCHEMA.map(entry => [entry.key, entry.start]));
 
 export function decodeAirobotStateFromSchema(values: RegisterValues, options: DecodeStateOptions = {}): AirobotState {
+  const serialNumber = decodeSignal(values, SIGNALS.serialNumber, options) as string | undefined;
   const firmwareVersion = decodeSignal(values, SIGNALS.firmwareVersion, options) as string | undefined;
   const temperatureExtract = decodeSignal(values, SIGNALS.temperatureExtract, options) as number | undefined;
   const temperatureSupply = decodeSignal(values, SIGNALS.temperatureSupply, options) as number | undefined;
@@ -79,6 +79,7 @@ export function decodeAirobotStateFromSchema(values: RegisterValues, options: De
   const filterReminderElapsedHours = decodeSignal(values, SIGNALS.filterReminderElapsedHours, options) as number | undefined;
 
   return {
+    serialNumber,
     firmwareVersion,
     temperatures: {
       extract: temperatureExtract,
@@ -128,6 +129,8 @@ function decodeSignal(values: RegisterValues, descriptor: SignalDescriptor, opti
     return values.get(registerAddress);
   case 'uint32':
     return readUInt32(values, registerAddress);
+  case 'ascii':
+    return readAscii(values, registerAddress, descriptor.decoder.words);
   case 'signedTenths':
     return readSignedTenths(values, registerAddress);
   case 'tenths':
@@ -220,6 +223,27 @@ function readBoundedUInt32(values: RegisterValues, registerAddress: number, min:
   }
 
   return clamp(value, min, max);
+}
+
+function readAscii(values: RegisterValues, registerAddress: number, words: number): string | undefined {
+  const bytes: number[] = [];
+
+  for (let offset = 0; offset < words; offset += 1) {
+    const word = values.get(registerAddress + offset);
+    if (typeof word !== 'number') {
+      return undefined;
+    }
+
+    bytes.push((word >> 8) & 0xff, word & 0xff);
+  }
+
+  const chars = bytes
+    .filter(byte => byte !== 0x00 && byte !== 0xff)
+    .map(byte => String.fromCharCode(byte))
+    .join('')
+    .trim();
+
+  return chars.length > 0 ? chars : undefined;
 }
 
 function decodeErrors(raw: number): AirobotErrors {

@@ -2,6 +2,7 @@ import type { AirobotState } from './types.js';
 
 export interface HomeKitProjection {
   accessoryInformation: {
+    serialNumber: string;
     firmwareRevision: string;
   };
   fan: {
@@ -53,6 +54,7 @@ export function projectHomeKitState(state: AirobotState | undefined, communicati
 
   return {
     accessoryInformation: {
+      serialNumber: state?.serialNumber ?? 'Unknown',
       firmwareRevision: state?.firmwareVersion ?? 'Unknown',
     },
     fan: {
