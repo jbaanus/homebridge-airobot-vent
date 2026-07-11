@@ -29,7 +29,7 @@ export const REGISTER_SCHEMA: RegisterSchemaEntry[] = [
   { key: 'humidityExhaust', start: 1009 },
   { key: 'humidityExtra', start: 1010 },
   { key: 'co2', start: 1011 },
-  { key: 'serialNumber', start: 1012, quantity: 2 },
+  { key: 'serialNumber', start: 1012, quantity: 2, optional: true, functionCode: 3 },
   { key: 'supplyFanLevel', start: 1014 },
   { key: 'extractFanLevel', start: 1015 },
   { key: 'supplyFanRpm', start: 1016 },

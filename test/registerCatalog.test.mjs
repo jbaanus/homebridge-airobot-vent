@@ -20,7 +20,9 @@ test('generateReadRanges reproduces the current read plan from catalog', () => {
   const ranges = generateReadRanges(REGISTER_CATALOG);
 
   assert.deepEqual(ranges, [
-    { start: 1000, quantity: 20 },
+    { start: 1000, quantity: 12 },
+    { start: 1012, quantity: 2, optional: true, functionCode: 3 },
+    { start: 1014, quantity: 6 },
     { start: 1026, quantity: 10 },
     { start: 1051, quantity: 2 },
     { start: 4020, quantity: 1, optional: true, functionCode: 1 },
